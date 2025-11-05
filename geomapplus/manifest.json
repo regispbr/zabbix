@@ -1,0 +1,38 @@
+{
+	"manifest_version": 2.0,
+	"id": "geomapplus",
+	"type": "widget",
+	"name": "GeomapPlus",
+	"namespace": "GeomapPlus",
+	"version": "1.0",
+	"author": "Custom",
+	"description": "Displays host groups as configurable markers on a geographical map with enhanced alert management.",
+	"url": "web_interface/frontend_sections/dashboards/widgets/geomapplus",
+	"widget": {
+		"js_class": "CWidgetGeoMapPlus",
+        "in": {
+			"hostids": {
+				"type": "_hostids"
+			},
+			"groupids": {
+				"type": "_hostgroupids"
+			}
+		},
+		"out": [
+            {
+				"type": "_hostid"
+			},
+            {
+				"type": "_hostids"
+			}
+        ]
+	},
+	"actions": {
+		"widget.geomapplus.view": {
+			"class": "WidgetView"
+		}
+	},
+	"assets": {
+		"js": ["class.widget.js"]
+	}
+}
