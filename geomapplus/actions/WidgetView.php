@@ -284,9 +284,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 		}
 
 		$defaults = [
-			'latitude' => 0,
-			'longitude' => 0,
-			'zoom' => 1
+			'latitude' => -11,
+			'longitude' => -53,
+			'zoom' => 4
 		];
 
 		return [
@@ -357,3 +357,4 @@ class WidgetView extends CControllerDashboardWidgetView {
 		return $geo_json;
 	}
 }
+
