@@ -1,4 +1,4 @@
-<?php declare(strict_types = 0);
+<?php declare(strict_types = 1);
 /*
 ** Copyright (C) 2001-2025 Zabbix SIA
 **
@@ -30,7 +30,7 @@ $groupids = array_key_exists('groupids', $data['fields'])
 	->addField(array_key_exists('hostids', $data['fields'])
 		? (new CWidgetFieldMultiSelectHostView($data['fields']['hostids']))
 			->setFilterPreselect([
-				'id' => $groupids->getId(),
+				'id' => $groupids !== null ? $groupids->getId() : '',
 				'accept' => CMultiSelect::FILTER_PRESELECT_ACCEPT_ID,
 				'submit_as' => 'groupid'
 			])
@@ -45,13 +45,16 @@ $groupids = array_key_exists('groupids', $data['fields'])
 		: null
 	)
 	->addField(
-		(new CWidgetFieldLatLngView($data['fields']['default_view']))->setPlaceholder('40.6892494,-74.0466891')
+		(new CWidgetFieldLatLngView($data['fields']['default_view']))
+			->setPlaceholder('40.6892494,-74.0466891')
 	)
 	->addField(
-		new CWidgetFieldTextBoxView($data['fields']['group_name_pattern'])
+		(new CWidgetFieldTextBoxView($data['fields']['group_name_pattern']))
+			->setPlaceholder('/^(.+?) - (.+)$/i')
 	)
 	->addField(
-		new CWidgetFieldTextBoxView($data['fields']['group_name_replacement'])
+		(new CWidgetFieldTextBoxView($data['fields']['group_name_replacement']))
+			->setPlaceholder('$2')
 	)
 	->addField(
 		new CWidgetFieldRadioButtonListView($data['fields']['marker_shape'])

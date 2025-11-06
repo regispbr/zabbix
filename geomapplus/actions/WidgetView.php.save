@@ -1,4 +1,4 @@
-<?php declare(strict_types = 1);
+<?php declare(strict_types = 0);
 /*
 ** Copyright (C) 2001-2025 Zabbix SIA
 **
@@ -16,32 +16,24 @@
 
 namespace Modules\GeomapPlus\Actions;
 
-use CControllerDashboardWidgetView;
-use CControllerResponseData;
-use CGeomapCoordinatesParser;
-use CParser;
-use CProfile;
-use CSettingsHelper;
-use function getSubGroups;
-use function getTileProviders;
-use const TAG_EVAL_TYPE_AND_OR;
-use const HOST_INVENTORY_MANUAL;
-use const HOST_INVENTORY_AUTOMATIC;
-use const GEOMAP_LAT_MIN;
-use const GEOMAP_LAT_MAX;
-use const GEOMAP_LNG_MIN;
-use const GEOMAP_LNG_MAX;
-use const TRIGGER_VALUE_TRUE;
-use const TRIGGER_SEVERITY_DISASTER;
-use const TRIGGER_SEVERITY_HIGH;
-use const TRIGGER_SEVERITY_AVERAGE;
-use const TRIGGER_SEVERITY_WARNING;
-use const TRIGGER_SEVERITY_INFORMATION;
-use const TRIGGER_SEVERITY_NOT_CLASSIFIED;
-
-
+use API,
+	CControllerDashboardWidgetView,
+	CControllerResponseData,
+	CGeomapCoordinatesParser,
+	CParser,
+	CProfile,
+	CSettingsHelper;
 
 class WidgetView extends CControllerDashboardWidgetView {
+
+	protected string $widgetid;
+
+	/**
+	 * Global geomap configuration.
+	 *
+	 * @param array
+	 */
+	protected array $geomap_config;
 
 	protected function init(): void {
 		parent::init();
@@ -54,7 +46,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 	}
 
 	protected function doAction(): void {
-		$widgetid = $this->getInput('widgetid', 0);
+		// CORREÇÃO: Forçar a conversão para (string) para resolver o TypeError na linha 49
+		$this->widgetid = (string)$this->getInput('widgetid', 0);
 
 		$data = [
 			'name' => $this->getInput('name', $this->widget->getDefaultName()),
@@ -66,18 +59,18 @@ class WidgetView extends CControllerDashboardWidgetView {
 		];
 
 		if ($this->getInput('initial_load', 0)) {
-			$geomap_config = self::getMapConfig();
+			$this->geomap_config = self::getMapConfig();
 
-			$data['config'] = $geomap_config + $this->getMapCenter($geomap_config) + [
-				'filter' => $this->getUserProfileFilter((int)$widgetid),
-				'marker_shape' => $this->fields_values['marker_shape'] ?? 0,
+			$data['config'] = $this->geomap_config + $this->getMapCenter() + [
+				'filter' => $this->getUserProfileFilter(),
+				'marker_shape' => $this->fields_values['marker_shape'],
 				'colors' => [
-					'no_problems' => '#' . ($this->fields_values['color_no_problems'] ?? '00AA00'),
-					'information' => '#' . ($this->fields_values['color_information'] ?? '7499FF'),
-					'warning' => '#' . ($this->fields_values['color_warning'] ?? 'FFC859'),
-					'average' => '#' . ($this->fields_values['color_average'] ?? 'FFA059'),
-					'high' => '#' . ($this->fields_values['color_high'] ?? 'E97659'),
-					'disaster' => '#' . ($this->fields_values['color_disaster'] ?? 'E45959')
+					'no_problems' => '#' . $this->fields_values['color_no_problems'],
+					'information' => '#' . $this->fields_values['color_information'],
+					'warning' => '#' . $this->fields_values['color_warning'],
+					'average' => '#' . $this->fields_values['color_average'],
+					'high' => '#' . $this->fields_values['color_high'],
+					'disaster' => '#' . $this->fields_values['color_disaster']
 				]
 			];
 		}
@@ -98,11 +91,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		// Validate regex pattern
 		if (@preg_match($pattern, '') === false) {
+			// Invalid regex, return original name
 			return $name;
 		}
 
 		$transformed = @preg_replace($pattern, $replacement, $name);
 		
+		// If regex didn't match or error occurred, return original name
 		return ($transformed !== null && $transformed !== '') ? $transformed : $name;
 	}
 
@@ -114,12 +109,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return [];
 		}
 
-		$filter_groupids = !empty($this->fields_values['groupids']) 
-			? getSubGroups($this->fields_values['groupids']) 
-			: null;
+		$filter_groupids = $this->fields_values['groupids'] ? getSubGroups($this->fields_values['groupids']) : null;
 
 		// Get host groups
-		$groups = \API::HostGroup()->get([
+		$groups = API::HostGroup()->get([
 			'output' => ['groupid', 'name'],
 			'groupids' => $filter_groupids,
 			'preservekeys' => true
@@ -132,13 +125,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 		// Get hosts for each group
 		$result_groups = [];
 		foreach ($groups as $group) {
-			$hosts = \API::Host()->get([
+			$hosts = API::Host()->get([
 				'output' => ['hostid', 'name'],
 				'selectInventory' => ['location_lat', 'location_lon'],
 				'groupids' => $group['groupid'],
-				'hostids' => !empty($this->fields_values['hostids']) ? $this->fields_values['hostids'] : null,
-				'evaltype' => $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR,
-				'tags' => $this->fields_values['tags'] ?? [],
+				'hostids' => $this->fields_values['hostids'] ?: null,
+				'evaltype' => $this->fields_values['evaltype'],
+				'tags' => $this->fields_values['tags'],
 				'filter' => [
 					'inventory_mode' => [HOST_INVENTORY_MANUAL, HOST_INVENTORY_AUTOMATIC]
 				],
@@ -148,10 +141,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 			// Filter hosts with valid coordinates
 			$hosts = array_filter($hosts, static function ($host) {
-				if (!isset($host['inventory']['location_lat']) || !isset($host['inventory']['location_lon'])) {
-					return false;
-				}
-
 				$lat = $host['inventory']['location_lat'];
 				$lng = $host['inventory']['location_lon'];
 
@@ -174,7 +163,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$avg_lng /= count($hosts);
 
 			// Get triggers for hosts in this group
-			$triggers = \API::Trigger()->get([
+			$triggers = API::Trigger()->get([
 				'output' => ['triggerid', 'description', 'priority'],
 				'selectHosts' => ['hostid', 'name'],
 				'hostids' => array_keys($hosts),
@@ -186,15 +175,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 			]);
 
 			// Get problems
-			$problems = [];
-			if (!empty($triggers)) {
-				$problems = \API::Problem()->get([
-					'output' => ['eventid', 'objectid', 'severity', 'name', 'clock'],
-					'objectids' => array_keys($triggers),
-					'symptom' => false,
-					'recent' => true
-				]);
-			}
+			$problems = API::Problem()->get([
+				'output' => ['eventid', 'objectid', 'severity', 'name', 'clock'],
+				'objectids' => array_keys($triggers),
+				'symptom' => false,
+				'recent' => true
+			]);
 
 			// Organize problems by severity
 			$problems_by_severity = [
@@ -215,17 +201,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$max_severity = $problem['severity'];
 				}
 
-				if (isset($triggers[$problem['objectid']])) {
-					$trigger = $triggers[$problem['objectid']];
-					$problem_details[] = [
-						'eventid' => $problem['eventid'],
-						'severity' => $problem['severity'],
-						'name' => $problem['name'],
-						'clock' => $problem['clock'],
-						'host' => $trigger['hosts'][0]['name'] ?? '',
-						'hostid' => $trigger['hosts'][0]['hostid'] ?? 0
-					];
-				}
+				$trigger = $triggers[$problem['objectid']];
+				$problem_details[] = [
+					'eventid' => $problem['eventid'],
+					'severity' => $problem['severity'],
+					'name' => $problem['name'],
+					'clock' => $problem['clock'],
+					'host' => $trigger['hosts'][0]['name'],
+					'hostid' => $trigger['hosts'][0]['hostid']
+				];
 			}
 
 			// Apply regex transformation to group name
@@ -251,30 +235,28 @@ class WidgetView extends CControllerDashboardWidgetView {
 	/**
 	 * Get initial map center point, zoom level and coordinates to center when clicking on navigate home button.
 	 */
-	private function getMapCenter(array $geomap_config): array {
+	private function getMapCenter(): array {
 		$geoloc_parser = new CGeomapCoordinatesParser();
 		$home_coords = [];
 		$center = [];
 
-		$widgetid = $this->getInput('widgetid', 0);
-		$user_default_view = CProfile::get('web.dashboard.widget.geomapplus.default_view', '', $widgetid);
-		
+		$user_default_view = CProfile::get('web.dashboard.widget.geomapplus.default_view', '', $this->widgetid);
 		if ($user_default_view !== '' && $geoloc_parser->parse($user_default_view) == CParser::PARSE_SUCCESS) {
 			$home_coords['default'] = true;
 			$center = $geoloc_parser->result;
-			$center['zoom'] = min($geomap_config['max_zoom'], $center['zoom']);
+			$center['zoom'] = min($this->geomap_config['max_zoom'], $center['zoom']);
 		}
 
-		if (isset($this->fields_values['default_view'])
+		if (array_key_exists('default_view', $this->fields_values)
 				&& $this->fields_values['default_view'] !== ''
 				&& $geoloc_parser->parse($this->fields_values['default_view']) == CParser::PARSE_SUCCESS) {
 			$initial_view = $geoloc_parser->result;
 
-			if (isset($initial_view['zoom'])) {
-				$initial_view['zoom'] = min($geomap_config['max_zoom'], $initial_view['zoom']);
+			if (array_key_exists('zoom', $initial_view)) {
+				$initial_view['zoom'] = min($this->geomap_config['max_zoom'], $initial_view['zoom']);
 			}
 			else {
-				$initial_view['zoom'] = ceil($geomap_config['max_zoom'] / 2);
+				$initial_view['zoom'] = ceil($this->geomap_config['max_zoom'] / 2);
 			}
 
 			$home_coords['initial'] = $initial_view;
@@ -295,9 +277,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 		];
 	}
 
-	private function getUserProfileFilter(int $widgetid): array {
+	private function getUserProfileFilter(): array {
 		return [
-			'severity' => CProfile::get('web.dashboard.widget.geomapplus.severity_filter', [], $widgetid)
+			'severity' => CProfile::get('web.dashboard.widget.geomapplus.severity_filter', [], $this->widgetid)
 		];
 	}
 
@@ -327,7 +309,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 	/**
 	 * Convert array of host groups to valid GeoJSON (RFC7946) object.
 	 */
-	private static function convertToRFC7946(array $groups): array {
+	private static function convertToRFC7946(array $groups) : array {
 		$geo_json = [];
 
 		foreach ($groups as $group) {

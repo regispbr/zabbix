@@ -1,4 +1,4 @@
-<?php declare(strict_types = 0);
+<?php declare(strict_types = 1);
 /*
 ** Copyright (C) 2001-2025 Zabbix SIA
 **
