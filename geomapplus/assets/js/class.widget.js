@@ -417,7 +417,7 @@ class CWidgetGeoMapPlus extends CWidget {
 		const clusters = L.markerClusterGroup({
 			showCoverageOnHover: false,
 			zoomToBoundsOnClick: false,
-			removeOutsideVisibleBounds: true,
+			removeOutsideVisibleBounds: false,
 			spiderfyOnMaxZoom: false,
 			iconCreateFunction: (cluster) => {
 				const max_severity = Math.max(...cluster.getAllChildMarkers().map(p => p.feature.properties.severity));
@@ -766,3 +766,4 @@ function acknowledgeEvent(eventid) {
 	// In a real implementation, this would make an AJAX call to acknowledge the event
 	alert('Event acknowledgement functionality would be implemented here');
 }
+
