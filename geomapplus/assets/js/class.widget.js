@@ -53,6 +53,8 @@ class CWidgetGeoMapPlus extends CWidget {
 		this._home_coords = {};
 		this._marker_shape = CWidgetGeoMapPlus.MARKER_SHAPE_CIRCLE;
 		this._colors = {};
+        // MELHORIA DE COMPORTAMENTO: Adiciona timer para o popup
+        this._hintbox_timer = null;
 	}
 
 	promiseReady() {
@@ -88,13 +90,15 @@ class CWidgetGeoMapPlus extends CWidget {
 
 		this.#geomapplus = response.geomapplus;
 
-		if (this.#geomapplus.config !== undefined) {
+		if (this.#geomapplus.config !== undefined && this._map === null) {
 			this._marker_shape = this.#geomapplus.config.marker_shape;
 			this._colors = this.#geomapplus.config.colors;
 			this._initMap(this.#geomapplus.config);
 		}
 
-		this._addMarkers(this.#geomapplus.hostgroups);
+        if (this._map && this.#geomapplus.hostgroups) {
+		    this._addMarkers(this.#geomapplus.hostgroups);
+        }
 
 		if (!this.hasEverUpdated() && this.isReferred()) {
 			this.#selected_groupid = this.#getDefaultSelectable();
@@ -150,18 +154,7 @@ class CWidgetGeoMapPlus extends CWidget {
 
 		// Create markers layer.
 		this._markers = L.geoJSON([], {
-			onEachFeature: (feature, marker) => {
-				marker.on('mouseover', () => {
-					if (feature.properties.groupid !== this.#selected_groupid) {
-						marker.setIcon(this._mouseover_icons[feature.properties.severity]);
-					}
-				});
-				marker.on('mouseout', () => {
-					if (feature.properties.groupid !== this.#selected_groupid) {
-						marker.setIcon(this._icons[feature.properties.severity]);
-					}
-				});
-			},
+            // Eventos de mouseover/mouseout foram movidos para depois da criação
 			pointToLayer: function (feature, ll) {
 				return L.marker(ll, {
 					icon: this._icons[feature.properties.severity]
@@ -189,6 +182,9 @@ class CWidgetGeoMapPlus extends CWidget {
 		this._map.getContainer().addEventListener('click', (e) => {
 			if (e.target.classList.contains('leaflet-container')) {
 				this.removeHintBoxes();
+                // Limpa a seleção ao clicar no mapa
+                this.#selected_groupid = null;
+                this.#updateMarkers();
 			}
 		}, false);
 
@@ -224,25 +220,26 @@ class CWidgetGeoMapPlus extends CWidget {
 			Overlay.prototype.containFocus.call({'$dialogue': node.hintBoxItem});
 		});
 
-		this._markers.on('click keypress', (e) => {
-			this.#selected_groupid = e.layer.feature.properties.groupid;
+        // MELHORIA DE COMPORTAMENTO: Trocado 'click' por 'mouseover'
+		this._markers.on('mouseover', (e) => {
+            // Cancela qualquer timer de fechamento pendente
+            if (this._hintbox_timer) {
+                clearTimeout(this._hintbox_timer);
+                this._hintbox_timer = null;
+            }
 
-			this.#updateHintboxes();
-			this.#updateMarkers();
+            // Se o mouse já está sobre esse marcador, não faz nada
+            if (this.#selected_groupid === e.layer.feature.properties.groupid) {
+                return;
+            }
+
+            // Remove popups antigos
+            this.removeHintBoxes();
+
+			this.#selected_groupid = e.layer.feature.properties.groupid;
+			this.#updateMarkers(); // Atualiza ícone para "selecionado"
 
 			const node = e.originalEvent.srcElement;
-
-			if ('hintBoxItem' in node) {
-				return;
-			}
-
-			if (e.type === 'keypress') {
-				if (e.originalEvent.key !== ' ' && e.originalEvent.key !== 'Enter') {
-					return;
-				}
-
-				e.originalEvent.preventDefault();
-			}
 
 			const hintbox = document.createElement('div');
 			hintbox.classList.add(CWidgetGeoMapPlus.ZBX_STYLE_HINTBOX);
@@ -252,10 +249,29 @@ class CWidgetGeoMapPlus extends CWidget {
 			node.hintBoxItem = hintBox.createBox(e.originalEvent, node, hintbox, '', true);
 			e.layer.hintBoxItem = node.hintBoxItem;
 
+            const hintbox_node = node.hintBoxItem[0]; // Pega o elemento DOM do popup
+
+            // MELHORIA DE COMPORTAMENTO: Se o mouse entrar no popup, cancela o timer de fechar
+            hintbox_node.addEventListener('mouseover', () => {
+                if (this._hintbox_timer) {
+                    clearTimeout(this._hintbox_timer);
+                    this._hintbox_timer = null;
+                }
+            });
+
+            // MELHORIA DE COMPORTAMENTO: Se o mouse sair do popup, inicia o timer para fechar
+            hintbox_node.addEventListener('mouseout', () => {
+                this._hintbox_timer = setTimeout(() => {
+                    this.removeHintBoxes();
+                    this.#selected_groupid = null;
+                    this.#updateMarkers();
+                }, 300); // 300ms de delay
+            });
+
 			// Adjust hintbox size in case if scrollbar is necessary.
 			hintBox.positionElement(e.originalEvent, node, node.hintBoxItem);
 
-			// Center hintbox relative to node.
+			// Center hintbox relative to node. (Posição "em cima" do marcador)
 			node.hintBoxItem.position({
 				my: 'center bottom',
 				at: 'center top',
@@ -266,6 +282,14 @@ class CWidgetGeoMapPlus extends CWidget {
 			Overlay.prototype.recoverFocus.call({'$dialogue': node.hintBoxItem});
 			Overlay.prototype.containFocus.call({'$dialogue': node.hintBoxItem});
 		});
+
+        this._markers.on('mouseout', (e) => {
+            this._hintbox_timer = setTimeout(() => {
+                this.removeHintBoxes();
+                this.#selected_groupid = null;
+                this.#updateMarkers();
+            }, 250);
+        });
 
 		this._map.getContainer().addEventListener('cluster.dblclick', (e) => {
 			e.detail.layer.zoomToBounds({padding: [20, 20]});
@@ -322,7 +346,7 @@ class CWidgetGeoMapPlus extends CWidget {
 	/**
 	 * Get the closest group to the map center defined in the config.
 	 *
-	 * @param {Object}        config
+	 * @param {Object}  	 config
 	 * @param {Array<Object>} groups
 	 *
 	 * @returns {Object}
@@ -368,7 +392,9 @@ class CWidgetGeoMapPlus extends CWidget {
 		this._markers.eachLayer((marker) => {
 			const {groupid, severity} = marker.feature.properties;
 
-			marker.setIcon(groupid === this.#selected_groupid ? this._selected_icons[severity] : this._icons[severity]);
+            // Altera o ícone para 'mouseover' se estiver selecionado, senão ícone normal
+            const icon_set = (groupid === this.#selected_groupid) ? this._mouseover_icons : this._icons;
+			marker.setIcon(icon_set[severity]);
 		});
 
 		this._map.eachLayer((layer) => {
@@ -479,6 +505,11 @@ class CWidgetGeoMapPlus extends CWidget {
 	 * Function to delete all opened hintboxes.
 	 */
 	removeHintBoxes() {
+		// Cancela qualquer timer de fechamento pendente
+		if (this._hintbox_timer) {
+			clearTimeout(this._hintbox_timer);
+			this._hintbox_timer = null;
+		}
 		const markers = this._map._container.parentNode.querySelectorAll('.marker-cluster, .leaflet-marker-icon');
 		[...markers].forEach((m) => {
 			if ('hintboxid' in m) {
@@ -498,8 +529,10 @@ class CWidgetGeoMapPlus extends CWidget {
 		const makeGroupHeader = (group) => {
 			const {name, host_count, alert_count} = group.properties;
 			const header = document.createElement('div');
-			header.style.cssText = 'padding: 10px; background: #f4f4f4; border-bottom: 1px solid #ddd; font-weight: bold;';
-			header.innerHTML = `
+            
+			header.style.cssText = 'padding: 10px; background: var(--surface-color-2); border-bottom: 1px solid var(--border-color); font-weight: bold; color: var(--text-color);';
+			
+            header.innerHTML = `
 				<div>${name}</div>
 				<div style="font-size: 0.9em; margin-top: 5px;">
 					${t('Hosts')}: ${host_count} | ${t('Alerts')}: ${alert_count}
@@ -513,14 +546,17 @@ class CWidgetGeoMapPlus extends CWidget {
 			
 			if (!problem_details || problem_details.length === 0) {
 				const noAlerts = document.createElement('div');
-				noAlerts.style.cssText = 'padding: 20px; text-align: center; color: #00AA00;';
-				noAlerts.textContent = 'No alerts';
+                
+				noAlerts.style.cssText = 'padding: 20px; text-align: center; color: var(--ok-color); font-style: italic; background: var(--surface-color-1); color: var(--text-color);';
+				
+                noAlerts.textContent = 'No alerts';
 				return noAlerts;
 			}
 
 			const table = document.createElement('table');
 			table.className = ZBX_STYLE_LIST_TABLE;
-			table.style.cssText = 'width: 100%; max-height: 300px; overflow-y: auto;';
+            // MELHORIA DE CSS: Adiciona cor de fundo do tema
+			table.style.cssText = 'width: 100%; max-height: 300px; overflow-y: auto; background: var(--surface-color-1);';
 
 			const thead = document.createElement('thead');
 			thead.innerHTML = `
@@ -560,7 +596,8 @@ class CWidgetGeoMapPlus extends CWidget {
 		};
 
 		const container = document.createElement('div');
-		container.style.cssText = 'min-width: 600px; max-width: 800px;';
+        // MELHORIA DE CSS: Adiciona cor de fundo do tema
+		container.style.cssText = 'min-width: 600px; max-width: 800px; background: var(--surface-color-1);';
 
 		groups.forEach(group => {
 			const groupContainer = document.createElement('div');
