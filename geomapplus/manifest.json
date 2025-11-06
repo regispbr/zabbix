@@ -14,12 +14,12 @@
 			"width": {
 				"min": 4,
 				"max": 36,
-				"default": 12
+				"default": 6
 			},
 			"height": {
 				"min": 4,
 				"max": 32,
-				"default": 5
+				"default": 4
 			}
 		},
 		"in": {
@@ -50,3 +50,4 @@
 		]
 	}
 }
+
