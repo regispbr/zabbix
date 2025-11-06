@@ -4,13 +4,25 @@
 	"type": "widget",
 	"name": "GeomapPlus",
 	"namespace": "GeomapPlus",
-	"version": "1.0",
-	"author": "Custom",
+	"version": "1.0.0",
+	"author": "Reginaldo Costa",
 	"description": "Displays host groups as configurable markers on a geographical map with enhanced alert management.",
-	"url": "web_interface/frontend_sections/dashboards/widgets/geomapplus",
+	"url": "https://www.zabbix.com",
 	"widget": {
 		"js_class": "CWidgetGeoMapPlus",
-        "in": {
+		"size": {
+			"width": {
+				"min": 4,
+				"max": 36,
+				"default": 12
+			},
+			"height": {
+				"min": 4,
+				"max": 32,
+				"default": 5
+			}
+		},
+		"in": {
 			"hostids": {
 				"type": "_hostids"
 			},
@@ -19,13 +31,13 @@
 			}
 		},
 		"out": [
-            {
+			{
 				"type": "_hostid"
 			},
-            {
+			{
 				"type": "_hostids"
 			}
-        ]
+		]
 	},
 	"actions": {
 		"widget.geomapplus.view": {
@@ -33,6 +45,8 @@
 		}
 	},
 	"assets": {
-		"js": ["class.widget.js"]
+		"js": [
+			"class.widget.js"
+		]
 	}
 }
