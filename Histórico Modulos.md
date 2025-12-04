@@ -1,4 +1,3 @@
-
 # Todos Devem ter os seguintes filtros
 
 ## HOSTS
@@ -45,3 +44,18 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
  - Hosts (Enable, Disable, Mainantence)
  - Alamrms (Problems, Supressed, ACK, por Serviridade)
  - Items (Ativos, Disativados, erro).
+
+
+
+#Tarefas atuais Enzo:
+(✓) ⏳
+- Incluir filtro por tag e value no alarm widget. (1°) ⏳
+  
+- Averiguar todos os widgets para conferir se estão funcionando com essa funcionalidade, e consertar aqueles que não estão.  (2°) ⏳
+
+- Validar correlação dos alarmes, exibir e contar apenas aqueles que estão realmente ativos.   (3°) ⏳
+
+- Incluir Problem Status nos demais widgets -> Alarmwidget para usar de base.  (4°) ⏳
+
+- Alterar demais widgets para mesma organização do filtro de severidade, ficando igual ao do alarmwdiget no forms.  (5°) ⏳
+
