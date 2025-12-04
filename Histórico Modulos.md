@@ -2,25 +2,25 @@
 # Todos Devem ter os seguintes filtros
 
 ## HOSTS
-host groups
-hosts
-exclude hosts
-exclude host in maintenance
+- host groups
+- hosts
+- exclude hosts
+- exclude host in maintenance
 
 ## PROBLEMS
-problem tags
-problem status (all, problem, resolved)  ======== Alarmwidget - (usar de base)  ==================
-show ack problems
-show supressed problems
+- problem tags
+- problem status (all, problem, resolved)  ======== Alarmwidget - (usar de base)  ==================
+- show ack problems
+- show supressed problems
 
 ## TRIGGERS
 ============== Alterar demais widgets para mesma organização do alarmwdiget no forms  ===============
-Show Not Classified
-Show Information
-Show Waring
-Show Average
-Show High
-Show Disaster
+- Show Not Classified
+- Show Information
+- Show Waring
+- Show Average
+- Show High
+- Show Disaster
 
 ## Observações
 Validar correlação dos alarmes, exibir e contar apenas aqueles que estão realmente ativos.
@@ -39,9 +39,9 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
 
 ## text Widget
 
-Próximos Modulos
+# Próximos Modulos
 
-Contador baseado em filtros
+##Contador baseado em filtros
  - Hosts (Enable, Disable, Mainantence)
  - Alamrms (Problems, Supressed, ACK, por Serviridade)
  - Items (Ativos, Disativados, erro).
