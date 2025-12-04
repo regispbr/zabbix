@@ -49,7 +49,7 @@ class WidgetForm extends CWidgetForm {
 								->setFlags(CWidgetField::FLAG_NOT_EMPTY)
 				)
 				->addField(
-						(new CWidgetFieldTextBox('center_lng', _('Centro Longitude')))
+						(new CWidgetFieldTextBox('center_lng', _('Center Longitude')))
 								->setDefault('-52')
 								->setFlags(CWidgetField::FLAG_NOT_EMPTY)
 				)
