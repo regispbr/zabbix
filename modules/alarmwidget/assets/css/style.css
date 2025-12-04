@@ -1,0 +1,252 @@
+/*
+** Zabbix
+** Copyright (C) 2001-2025 Zabbix SIA
+** ... (Licença) ...
+**/
+
+/* Alarm Widget Styles */
+.alarm-widget {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	background-color: #1a1a1a;
+	color: #e0e0e0;
+}
+
+/* Hide the default Zabbix loader */
+.alarm-widget.is-loading::before,
+.alarm-widget.is-loading::after {
+	display: none !important;
+}
+
+.alarm-widget table.list-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 12px;
+	background-color: #1a1a1a;
+}
+
+.alarm-widget table.list-table th {
+	background-color: #2d2d2d;
+	color: #4a9eff;
+	padding: 8px 12px;
+	text-align: left;
+	font-weight: 600;
+	border-bottom: 2px solid #3d3d3d;
+	white-space: nowrap;
+	position: sticky;
+	top: 0;
+	z-index: 10;
+}
+
+.alarm-widget table.list-table th:hover {
+	background-color: #353535;
+}
+
+.alarm-widget table.list-table th.sort-asc::after {
+	content: ' ▲';
+	font-size: 10px;
+	color: #4a9eff;
+}
+
+.alarm-widget table.list-table th.sort-desc::after {
+	content: ' ▼';
+	font-size: 10px;
+	color: #4a9eff;
+}
+
+.alarm-widget table.list-table td {
+	padding: 8px 12px;
+	border-bottom: 1px solid #2d2d2d;
+	vertical-align: middle;
+}
+
+.alarm-widget table.list-table tbody tr {
+	transition: background-color 0.2s ease;
+}
+
+.alarm-widget table.list-table tbody tr:hover {
+	background-color: #252525;
+}
+
+.alarm-widget table.list-table tbody tr.selected {
+	background-color: #2a3f5f;
+}
+
+/* Severity styles matching the image */
+.alarm-severity {
+	font-weight: 600;
+	padding: 4px 12px !important;
+	border-radius: 3px;
+	text-align: center;
+	text-transform: uppercase;
+	font-size: 11px;
+}
+
+.alarm-severity-disaster {
+	background-color: #e02020 !important;
+	color: #ffffff !important;
+}
+
+.alarm-severity-high {
+	background-color: #e97659 !important;
+	color: #ffffff !important;
+}
+
+.alarm-severity-average {
+	background-color: #ffa059 !important;
+	color: #000000 !important;
+}
+
+.alarm-severity-warning {
+	background-color: #ffc859 !important;
+	color: #000000 !important;
+}
+
+.alarm-severity-information {
+	background-color: #7499ff !important;
+	color: #ffffff !important;
+}
+
+.alarm-severity-not-classified {
+	background-color: #97aab3 !important;
+	color: #000000 !important;
+}
+
+/* Status styles */
+.alarm-status-problem {
+	color: #e02020;
+	font-weight: 600;
+}
+
+.alarm-status-resolved {
+	color: #4a9eff;
+	font-weight: 600;
+}
+
+/* --- MUDANÇA: ESTILOS DO NOVO ACK --- */
+/* Remove a 'bolinha' antiga */
+.alarm-ack .zi-comment {
+	display: none;
+}
+
+.alarm-ack-cell {
+	white-space: nowrap;
+}
+
+.alarm-ack-icon {
+	color: var(--zbx-color-ok, #28a745); /* Verde */
+	font-weight: bold;
+	margin-right: 5px;
+	font-size: 14px;
+}
+
+.alarm-ack-btn {
+	text-decoration: none;
+	color: var(--zbx-color-link, #4a9eff);
+	font-weight: bold;
+	padding: 2px 5px;
+	border: 1px solid var(--zbx-color-link, #4a9eff);
+	border-radius: 3px;
+	background-color: transparent;
+	font-size: 11px;
+}
+.alarm-ack-btn:hover {
+	color: var(--zbx-color-button-text-hover, #fff);
+	background-color: var(--zbx-color-link-hover, #0056b3);
+	border-color: var(--zbx-color-link-hover, #0056b3);
+	text-decoration: none;
+}
+/* --- FIM DA MUDANÇA --- */
+
+/* No data message */
+.alarm-widget .no-data-message {
+	padding: 40px;
+	text-align: center;
+	color: #888;
+	font-size: 14px;
+}
+
+/* Scrollbar styles for dark theme */
+.alarm-widget ::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.alarm-widget ::-webkit-scrollbar-track {
+	background: #1a1a1a;
+}
+
+.alarm-widget ::-webkit-scrollbar-thumb {
+	background: #3d3d3d;
+	border-radius: 5px;
+}
+
+.alarm-widget ::-webkit-scrollbar-thumb:hover {
+	background: #4d4d4d;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+	.alarm-widget table.list-table {
+		font-size: 11px;
+	}
+	
+	.alarm-widget table.list-table th,
+	.alarm-widget table.list-table td {
+		padding: 6px 8px;
+	}
+}
+
+@media (max-width: 768px) {
+	.alarm-widget table.list-table {
+		font-size: 10px;
+	}
+	
+	.alarm-widget table.list-table th,
+	.alarm-widget table.list-table td {
+		padding: 4px 6px;
+	}
+}
+
+/* Print styles */
+@media print {
+	.alarm-widget {
+		background-color: #ffffff;
+		color: #000000;
+	}
+	
+	.alarm-widget table.list-table th {
+		background-color: #f0f0f0;
+		color: #000000;
+	}
+}
+
+/* Light theme support (if needed) */
+.theme-light .alarm-widget {
+	background-color: #ffffff;
+	color: #000000;
+}
+
+.theme-light .alarm-widget table.list-table {
+	background-color: #ffffff;
+}
+
+.theme-light .alarm-widget table.list-table th {
+	background-color: #f5f5f5;
+	color: #0066cc;
+	border-bottom-color: #e0e0e0;
+}
+
+.theme-light .alarm-widget table.list-table td {
+	border-bottom-color: #e0e0e0;
+}
+
+.theme-light .alarm-widget table.list-table tbody tr:hover {
+	background-color: #f9f9f9;
+}
+
+.theme-light .alarm-widget table.list-table tbody tr.selected {
+	background-color: #e3f2fd;
+}

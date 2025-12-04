@@ -1,0 +1,521 @@
+/*
+** Zabbix
+** Copyright (C) 2001-2023 Zabbix SIA
+** ... (GNU license header) ...
+*/
+
+/* Map Widget Styles */
+.map-widget {
+		position: relative;
+		width: 100%;
+		height: 100%;
+		overflow: hidden;
+}
+
+/* Hide the default Zabbix loader */
+.map-widget.is-loading::before,
+.map-widget.is-loading::after {
+		display: none !important;
+}
+
+.map-widget-container {
+		position: relative;
+		width: 100%;
+		height: 100%;
+		display: block;
+		box-sizing: border-box;
+}
+
+/* MapLibre GL overrides */
+.map-widget-container .maplibregl-canvas {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+}
+
+.map-widget-container .maplibregl-ctrl-attrib {
+		font-size: 10px;
+		background-color: rgba(255, 255, 255, 0.8);
+}
+
+.map-widget-container .maplibregl-ctrl-logo {
+		margin: 0 0 5px 5px;
+}
+
+/* Navigation controls styling */
+.map-widget-container .maplibregl-ctrl-group {
+		background: rgba(255, 255, 255, 0.9);
+		box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+.map-widget-container .maplibregl-ctrl-group button {
+		width: 29px;
+		height: 29px;
+}
+
+/* Dark theme support */
+.theme-dark .map-widget-container .maplibregl-ctrl-attrib {
+		background-color: rgba(0, 0, 0, 0.8);
+		color: #fff;
+}
+
+.theme-dark .map-widget-container .maplibregl-ctrl-group {
+		background: rgba(0, 0, 0, 0.9);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+		.map-widget-container .maplibregl-ctrl-attrib {
+				font-size: 8px;
+		}
+
+		.map-widget-container .maplibregl-ctrl-group button {
+				width: 26px;
+				height: 26px;
+		}
+}
+
+/* Loading state */
+.map-widget.is-loading .map-widget-container {
+		opacity: 0.5;
+}
+
+
+.map-cluster-marker {
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	border: 2px solid #FFFFFF;
+	color: #FFFFFF;
+	font-size: 14px;
+	font-weight: bold;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	cursor: pointer;
+	box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* ----- POPUP THEME FIX ----- */
+
+/* Força o popup a ter o fundo escuro e texto claro do Zabbix */
+.maplibregl-popup-content {
+	background-color: #2a2a2a !important; /* Fundo escuro */
+	color: #dfdfdf !important;           /* Texto claro */
+	padding: 0;
+	box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+	border-radius: 4px;
+}
+
+/* Remove a "seta" branca do popup */
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+	border-top-color: #2a2a2a;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+	border-bottom-color: #2a2a2a;
+}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+	border-right-color: #2a2a2a;
+}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+	border-left-color: #2a2a2a;
+}
+
+/* ----- POPUP CONTENT STYLING ----- */
+
+/* Usamos seletores mais específicos para garantir que o tema seja aplicado */
+.maplibregl-popup-content .map-popup-content {
+	max-height: 300px;
+	overflow-y: auto;
+	font-family: Arial, sans-serif;
+	padding: 10px 15px;
+	color: #dfdfdf; /* Garante que o texto interno seja claro */
+}
+
+.maplibregl-popup-content .map-popup-header {
+	font-size: 16px;
+	font-weight: bold;
+	border-bottom: 1px solid #444;
+	padding-bottom: 8px;
+	margin-bottom: 10px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	color: #fff; /* Garante que o título seja branco */
+}
+
+.maplibregl-popup-content .map-popup-header span {
+	flex-grow: 1;
+}
+
+.maplibregl-popup-content .map-popup-host-item {
+	margin-bottom: 10px;
+	padding-bottom: 8px;
+	border-bottom: 1px dashed #444;
+}
+.maplibregl-popup-content .map-popup-host-item:last-child {
+	border-bottom: none;
+	margin-bottom: 0;
+}
+
+.maplibregl-popup-content .map-popup-host-name {
+	font-size: 14px;
+	font-weight: bold;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	color: #dfdfdf; /* Garante que o nome do host seja claro */
+}
+
+/* Estilo do botão "View" e "View All" */
+.maplibregl-popup-content .view-button {
+	font-size: 12px;
+	font-weight: normal;
+	background-color: #4a4a4a;
+	border: 1px solid #555;
+	border-radius: 3px;
+	padding: 3px 8px;
+	text-decoration: none;
+	color: #fff !important; /* Texto do botão branco */
+	margin-left: 10px;
+}
+.maplibregl-popup-content .view-button:hover {
+	background-color: #5a5a5a;
+}
+
+.maplibregl-popup-content .map-popup-problem-list {
+	margin-top: 5px;
+	padding-left: 15px;
+}
+
+.maplibregl-popup-content .map-popup-problem-item {
+	font-size: 12px;
+	list-style-type: none;
+	padding-left: 10px;
+	position: relative;
+}
+
+.maplibregl-popup-content .map-popup-problem-item::before {
+	content: '\25A0';
+	position: absolute;
+	left: -5px;
+	top: 0;
+	font-size: 14px;
+}
+
+/* Garante que o "Status: OK" também tenha a cor correta */
+.maplibregl-popup-content .host-status-ok {
+	font-size: 12px;
+}
+
+/* ----- NOVOS ESTILOS PARA O RODAPÉ DO POPUP ----- */
+
+.maplibregl-popup-content .map-popup-footer {
+	margin-top: 10px;
+	padding-top: 10px;
+	border-top: 1px solid #444; /* Linha divisória */
+}
+
+/* Faz o botão "View All" ocupar a largura toda */
+.maplibregl-popup-content .map-popup-footer .view-button {
+	display: block;
+	text-align: center;
+}
+
+.map-marker-container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	/* Isso ancora o pin pela ponta de baixo */
+	transform: translateY(-50%); 
+}
+
+.map-marker-label {
+	background-color: rgba(0, 0, 0, 0.7);
+	color: #ffffff;
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-size: 12px;
+	font-weight: bold;
+	white-space: nowrap;
+	margin-bottom: 4px;
+	/* Sombra para legibilidade */
+	text-shadow: 0 0 2px #000;
+}
+
+.map-marker-pin {
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	border: 2px solid #ffffff;
+	box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+	cursor: pointer;
+}
+
+.map-search-container {
+	position: absolute;
+	top: 10px;
+	left: 10px;
+	z-index: 10; /* Garante que fique acima do mapa */
+	width: 250px;
+}
+
+.map-search-container input[type="text"] {
+	width: 100%;
+	padding: 8px 10px;
+	font-size: 14px;
+	border: 1px solid #555;
+	border-radius: 4px;
+	background-color: #2a2a2a;
+	color: #dfdfdf;
+	box-sizing: border-box;
+}
+
+.map-search-results {
+	background-color: #2a2a2a;
+	color: #dfdfdf;
+	border: 1px solid #555;
+	border-top: none;
+	border-radius: 0 0 4px 4px;
+	max-height: 300px;
+	overflow-y: auto;
+	/* Começa escondido */
+	display: none; 
+}
+
+.map-search-results.visible {
+	display: block; /* Aparece quando há resultados */
+}
+
+.map-search-item {
+	padding: 10px;
+	cursor: pointer;
+	border-bottom: 1px solid #444;
+}
+.map-search-item:last-child {
+	border-bottom: none;
+}
+
+.map-search-item:hover {
+	background-color: #3a3a3a;
+}
+
+.map-popup-ack-icon {
+	color: #28a745; /* Deixa SÓ O ÍCONE verde */
+	font-weight: bold;
+	margin-left: 5px; /* Adiciona um espaço à esquerda do ícone */
+}
+
+/* --- O Botão (Agora posicionado abaixo da pesquisa) --- */
+.map-show-problems-btn {
+	width: 100%;
+	margin-top: 8px;
+	box-sizing: border-box;
+	
+	/* Estilo de botão do Zabbix (continua o mesmo) */
+	background-color: #333;
+	border: 1px solid #555;
+	color: #dfdfdf;
+	
+	/* --- MUDANÇA AQUI --- */
+	padding: 6px 12px; 	/* Reduzido o padding vertical de 8px para 6px */
+	height: auto; 		/* Garante que a altura não seja fixa */
+	line-height: normal; /* Reseta o line-height para o padrão */
+	/* --- FIM DA MUDANÇA --- */
+
+	cursor: pointer;
+	border-radius: 4px;
+	font-size: 13px;
+}
+.map-show-problems-btn:hover {
+	background-color: #444;
+}
+/* --- O Modal (Popup) --- */
+
+/* O fundo escuro (overlay) */
+.map-problems-modal-overlay {
+	display: none; /* Começa escondido */
+	position: fixed; /* Fica por cima de tudo */
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: rgba(0, 0, 0, 0.7); /* Fundo semi-transparente */
+	z-index: 1000; /* Fica acima do Zabbix */
+	justify-content: center;
+	align-items: center;
+}
+/* Classe que o JS vai adicionar para mostrar */
+.map-problems-modal-overlay.visible {
+	display: flex;
+}
+
+/* A caixa de conteúdo do modal */
+.map-problems-modal-content {
+	background: #2a2a2a;
+	color: #dfdfdf;
+	border: 1px solid #555;
+	border-radius: 6px;
+	padding: 20px;
+	width: 90%;
+	max-width: 600px; /* Largura máxima */
+	max-height: 80vh; /* Altura máxima */
+	display: flex;
+	flex-direction: column;
+	position: relative;
+	box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+}
+
+/* O botão '×' de fechar */
+.map-problems-modal-close {
+	position: absolute;
+	top: 10px;
+	right: 15px;
+	font-size: 24px;
+	font-weight: bold;
+	color: #aaa;
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 0;
+	line-height: 1;
+}
+.map-problems-modal-close:hover {
+	color: #fff;
+}
+
+/* O cabeçalho "All Problems" */
+.map-problems-modal-header {
+	font-size: 18px;
+	font-weight: bold;
+	border-bottom: 1px solid #444;
+	padding-bottom: 10px;
+	margin-bottom: 15px;
+}
+
+/* O corpo (container da lista) */
+.map-problems-modal-body {
+	overflow-y: auto; /* Adiciona scroll se a lista for longa */
+	flex-grow: 1;
+}
+
+/* --- Re-uso de estilos do popup do mapa --- */
+/* Para que a lista de problemas fique igual ao popup */
+
+.map-problems-modal-body .map-popup-host-item {
+	border-bottom: 1px solid #444;
+	padding: 10px 0;
+}
+.map-problems-modal-body .map-popup-host-item:last-child {
+	border-bottom: none;
+}
+.map-problems-modal-body .map-popup-host-name {
+	font-size: 14px;
+	font-weight: bold;
+}
+.map-problems-modal-body .map-popup-problem-list {
+	padding-left: 20px;
+}
+.map-problems-modal-body .map-popup-problem-item {
+	font-weight: bold;
+}
+/* --- O Botão "Toggle Problems" --- */
+.map-filter-problems-btn {
+	width: 100%;
+	margin-top: 8px; /* Espaço entre os botões */
+	box-sizing: border-box;
+	
+	background-color: #333;
+	border: 1px solid #555;
+	color: #dfdfdf;
+	padding: 6px 12px;
+	height: auto;
+	line-height: normal;
+	cursor: pointer;
+	border-radius: 4px;
+	font-size: 13px;
+	transition: background-color 0.2s, border-color 0.2s;
+}
+.map-filter-problems-btn:hover {
+	background-color: #444;
+}
+
+/* Estilo do botão quando o filtro está LIGADO */
+.map-filter-problems-btn.active {
+	background-color: #0059b3; /* Um azul para indicar "ligado" */
+	border-color: #007bff;
+	color: #ffffff;
+}
+
+/* ===============================================
+   ESTILOS DA TABELA DO MODAL "ALL PROBLEMS"
+   (Adaptado do AlarmWidget)
+===============================================
+*/
+
+.map-problems-modal-body .map-modal-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 12px;
+}
+
+.map-problems-modal-body .map-modal-table th {
+	background-color: #333;
+	color: #6c99ff; /* Azul claro */
+	padding: 8px 12px;
+	text-align: left;
+	font-weight: bold;
+	border-bottom: 2px solid #555;
+	white-space: nowrap;
+}
+
+.map-problems-modal-body .map-modal-table td {
+	padding: 8px 12px;
+	border-bottom: 1px solid #444;
+	vertical-align: middle;
+}
+
+.map-problems-modal-body .map-modal-table tbody tr:hover {
+	background-color: #3a3a3a;
+}
+
+/* * Estilos de Severidade (como no AlarmWidget)
+ * Usamos a cor de fundo do PHP e ajustamos a cor do texto.
+*/
+.map-modal-severity-badge {
+	font-weight: bold;
+	padding: 4px 8px;
+	border-radius: 3px;
+	text-align: center;
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+/* Cor do texto para fundos claros (Warning, Average, Not Classified) */
+.map-modal-severity-badge.sev-text-dark {
+	color: #000000 !important;
+}
+
+/* Cor do texto para fundos escuros (Info, High, Disaster) */
+.map-modal-severity-badge.sev-text-light {
+	color: #ffffff !important;
+}
+
+/* --- Estilo para o botão 'Ack' --- */
+.map-popup-ack-btn {
+	text-decoration: none;
+	color: #7499FF; /* Azul claro do Zabbix */
+	font-weight: bold;
+	margin-left: 5px;
+	padding: 2px 4px;
+	border: 1px solid #7499FF;
+	border-radius: 3px;
+	background-color: rgba(116, 153, 255, 0.1);
+}
+.map-popup-ack-btn:hover {
+	color: #fff;
+	background-color: #7499FF;
+	text-decoration: none;
+}

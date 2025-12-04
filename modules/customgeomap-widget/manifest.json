@@ -1,0 +1,21 @@
+{
+  "manifest_version": 2.0,
+  "id": "customgeomap-widget",
+  "type": "widget",
+  "name": "Custom Geo Map",
+  "namespace": "CustomGeoMapWidget",
+  "version": "1.0.3",
+  "author": "Reginaldo Costa",
+  "url": "",
+  "actions": {
+    "widget.customgeomap.view": {
+      "class": "WidgetView"
+    }
+  },
+  "widget": {
+    "js_class": "CustomGeoMap"
+  },
+  "assets": {
+    "js": ["class.widget.js"]
+  }
+}

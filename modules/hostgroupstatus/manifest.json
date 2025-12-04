@@ -1,0 +1,22 @@
+{
+	"manifest_version": 2.0,
+	"id": "hostgroupstatus",
+	"type": "widget",
+	"name": "Host Group Status",
+	"namespace": "HostGroupStatus",
+	"version": "1.0",
+	"author": "Reginaldo Costa",
+	"url": "",
+	"actions": {
+		"widget.hostgroupstatus.view": {
+			"class": "WidgetView"
+		}
+	},
+	"widget": {
+		"js_class": "WidgetHostGroupStatus"
+	},
+	"assets": {
+		"js": ["class.widget.js", "widget.edit.js"],
+		"css": ["style.css"]
+	}
+}

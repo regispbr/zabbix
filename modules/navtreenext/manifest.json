@@ -1,0 +1,44 @@
+{
+	"manifest_version": 2.0,
+	"id": "navtreenext",
+	"type": "widget",
+	"name": "Navigation tree next",
+	"namespace": "NavTreeNext",
+	"version": "1.0",
+	"author": "Reginaldo Costa",
+	"description": "Navigation tree that supports maps, dashboards and custom URLs with problem statistics.",
+	"url": "web_interface/frontend_sections/dashboards/widgets/navtree_next",
+	"widget": {
+		"out": [
+			{
+				"type": "_mapid"
+			},
+			{
+				"type": "_dashboardid"
+			}
+		],
+		"size": {
+			"width": 18,
+			"height": 5
+		},
+		"js_class": "CWidgetNavTreeNext",
+		"refresh_rate": 900
+	},
+	"actions": {
+		"widget.navtreenext.view": {
+			"class": "WidgetView"
+		},
+		"widget.navtreenext.item.edit": {
+			"class": "NavTreeItemEdit",
+			"view": "navtreeitem.edit",
+			"layout": "layout.json"
+		},
+		"widget.navtreenext.item.update": {
+			"class": "NavTreeItemUpdate",
+			"layout": "layout.json"
+		}
+	},
+	"assets": {
+		"js": ["class.widget.js"]
+	}
+}

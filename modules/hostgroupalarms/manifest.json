@@ -1,0 +1,22 @@
+{
+	"manifest_version": 2.0,
+	"id": "hostgroupalarms",
+	"type": "widget",
+	"name": "Host Group Alarms",
+	"namespace": "HostGroupAlarms",
+	"version": "1.0",
+	"author": "Reginaldo Costa",
+	"url": "",
+	"actions": {
+		"widget.hostgroupalarms.view": {
+			"class": "WidgetView"
+		}
+	},
+	"widget": {
+		"js_class": "WidgetHostGroupAlarms"
+	},
+	"assets": {
+		"js": ["class.widget.js", "widget.edit.js"],
+		"css": ["style.css"]
+	}
+}

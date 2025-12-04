@@ -1,0 +1,226 @@
+/*
+** Zabbix
+** Copyright (C) 2001-2023 Zabbix SIA
+** ... (GNU license header) ...
+*/
+
+/* Map Widget Styles */
+.map-widget {
+		position: relative;
+		width: 100%;
+		height: 100%;
+		overflow: hidden;
+}
+
+/* Hide the default Zabbix loader */
+.map-widget.is-loading::before,
+.map-widget.is-loading::after {
+		display: none !important;
+}
+
+.map-widget-container {
+		position: relative;
+		width: 100%;
+		height: 100%;
+		display: block;
+		box-sizing: border-box;
+}
+
+/* MapLibre GL overrides */
+.map-widget-container .maplibregl-canvas {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+}
+
+.map-widget-container .maplibregl-ctrl-attrib {
+		font-size: 10px;
+		background-color: rgba(255, 255, 255, 0.8);
+}
+
+.map-widget-container .maplibregl-ctrl-logo {
+		margin: 0 0 5px 5px;
+}
+
+/* Navigation controls styling */
+.map-widget-container .maplibregl-ctrl-group {
+		background: rgba(255, 255, 255, 0.9);
+		box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+.map-widget-container .maplibregl-ctrl-group button {
+		width: 29px;
+		height: 29px;
+}
+
+/* Dark theme support */
+.theme-dark .map-widget-container .maplibregl-ctrl-attrib {
+		background-color: rgba(0, 0, 0, 0.8);
+		color: #fff;
+}
+
+.theme-dark .map-widget-container .maplibregl-ctrl-group {
+		background: rgba(0, 0, 0, 0.9);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+		.map-widget-container .maplibregl-ctrl-attrib {
+				font-size: 8px;
+		}
+
+		.map-widget-container .maplibregl-ctrl-group button {
+				width: 26px;
+				height: 26px;
+		}
+}
+
+/* Loading state */
+.map-widget.is-loading .map-widget-container {
+		opacity: 0.5;
+}
+
+
+.map-cluster-marker {
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	border: 2px solid #FFFFFF;
+	color: #FFFFFF;
+	font-size: 14px;
+	font-weight: bold;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	cursor: pointer;
+	box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* ----- POPUP THEME FIX ----- */
+
+/* Força o popup a ter o fundo escuro e texto claro do Zabbix */
+.maplibregl-popup-content {
+	background-color: #2a2a2a !important; /* Fundo escuro */
+	color: #dfdfdf !important;           /* Texto claro */
+	padding: 0;
+	box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+	border-radius: 4px;
+}
+
+/* Remove a "seta" branca do popup */
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+	border-top-color: #2a2a2a;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+	border-bottom-color: #2a2a2a;
+}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+	border-right-color: #2a2a2a;
+}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+	border-left-color: #2a2a2a;
+}
+
+/* ----- POPUP CONTENT STYLING ----- */
+
+/* Usamos seletores mais específicos para garantir que o tema seja aplicado */
+.maplibregl-popup-content .map-popup-content {
+	max-height: 300px;
+	overflow-y: auto;
+	font-family: Arial, sans-serif;
+	padding: 10px 15px;
+	color: #dfdfdf; /* Garante que o texto interno seja claro */
+}
+
+.maplibregl-popup-content .map-popup-header {
+	font-size: 16px;
+	font-weight: bold;
+	border-bottom: 1px solid #444;
+	padding-bottom: 8px;
+	margin-bottom: 10px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	color: #fff; /* Garante que o título seja branco */
+}
+
+.maplibregl-popup-content .map-popup-header span {
+	flex-grow: 1;
+}
+
+.maplibregl-popup-content .map-popup-host-item {
+	margin-bottom: 10px;
+	padding-bottom: 8px;
+	border-bottom: 1px dashed #444;
+}
+.maplibregl-popup-content .map-popup-host-item:last-child {
+	border-bottom: none;
+	margin-bottom: 0;
+}
+
+.maplibregl-popup-content .map-popup-host-name {
+	font-size: 14px;
+	font-weight: bold;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	color: #dfdfdf; /* Garante que o nome do host seja claro */
+}
+
+/* Estilo do botão "View" e "View All" */
+.maplibregl-popup-content .view-button {
+	font-size: 12px;
+	font-weight: normal;
+	background-color: #4a4a4a;
+	border: 1px solid #555;
+	border-radius: 3px;
+	padding: 3px 8px;
+	text-decoration: none;
+	color: #fff !important; /* Texto do botão branco */
+	margin-left: 10px;
+}
+.maplibregl-popup-content .view-button:hover {
+	background-color: #5a5a5a;
+}
+
+.maplibregl-popup-content .map-popup-problem-list {
+	margin-top: 5px;
+	padding-left: 15px;
+}
+
+.maplibregl-popup-content .map-popup-problem-item {
+	font-size: 12px;
+	list-style-type: none;
+	padding-left: 10px;
+	position: relative;
+}
+
+.maplibregl-popup-content .map-popup-problem-item::before {
+	content: '■';
+	position: absolute;
+	left: -5px;
+	top: 0;
+	font-size: 14px;
+}
+
+/* Garante que o "Status: OK" também tenha a cor correta */
+.maplibregl-popup-content .host-status-ok {
+	font-size: 12px;
+}
+
+/* ----- NOVOS ESTILOS PARA O RODAPÉ DO POPUP ----- */
+
+.maplibregl-popup-content .map-popup-footer {
+	margin-top: 10px;
+	padding-top: 10px;
+	border-top: 1px solid #444; /* Linha divisória */
+}
+
+/* Faz o botão "View All" ocupar a largura toda */
+.maplibregl-popup-content .map-popup-footer .view-button {
+	display: block;
+	text-align: center;
+}
+

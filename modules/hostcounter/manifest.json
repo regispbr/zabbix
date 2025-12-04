@@ -1,0 +1,22 @@
+{
+	"manifest_version": 2.0,
+	"id": "hostcounter",
+	"type": "widget",
+	"name": "Host Counter",
+	"namespace": "HostCounter",
+	"version": "1.0",
+	"author": "Reginaldo Costa",
+	"url": "",
+	"actions": {
+		"widget.hostcounter.view": {
+			"class": "WidgetView"
+		}
+	},
+	"widget": {
+		"js_class": "WidgetHostCounter"
+	},
+	"assets": {
+		"js": ["class.widget.js", "widget.edit.js"],
+		"css": ["style.css"]
+	}
+}

@@ -1,0 +1,22 @@
+{
+	"manifest_version": 2.0,
+	"id": "alarmwidget",
+	"type": "widget",
+	"name": "Alarm Widget",
+	"namespace": "AlarmWidget",
+	"version": "1.0",
+	"author": "Zabbix Widget Developer",
+	"url": "",
+	"actions": {
+		"widget.alarmwidget.view": {
+			"class": "WidgetView"
+		}
+	},
+	"widget": {
+		"js_class": "WidgetAlarm"
+	},
+	"assets": {
+		"js": ["class.widget.js", "widget.edit.js"],
+		"css": ["style.css"]
+	}
+}
