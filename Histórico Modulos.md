@@ -49,7 +49,7 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
 
 #Tarefas atuais Enzo:
 (✓) ⏳
-- Incluir filtro por tag e value no alarm widget. (1°) ⏳
+- Incluir filtro por tag e value no alarm widget. (1°) (✓)
   
 - Averiguar todos os widgets para conferir se estão funcionando com essa funcionalidade, e consertar aqueles que não estão.  (2°) ⏳
 
