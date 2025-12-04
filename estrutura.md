@@ -1,6 +1,6 @@
 # Grupos
- - Define Cliente e Local
-   - NAV BRASIL/SP/DNGR/CPD
+-Define Cliente e Local
+   -NAV BRASIL/SP/DNGR/CPD
  # TAGs
    -  Tags de Host
     - TYPE = Tipo de Equipamento Switch, Link, Serviço, Firewall, Roteador, Acess Point
