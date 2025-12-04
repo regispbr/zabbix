@@ -1,19 +1,20 @@
 
-Todos Devem ter os seguintes filtros
+##Todos Devem ter os seguintes filtros
 
-##hosts
+##HOSTS
 host groups
 hosts
 exclude hosts
 exclude host in maintenance
 
-#problems
+#PROBLEMS
 problem tags
 problem status (all, problem, resolved)  ======== Alarmwidget - (usar de base)  ==================
 show ack problems
 show supressed problems
 
-#Triggers/Alarms   ============== Alterar demais widgets para mesma organização do alarmwdiget no forms  ===============
+##TRIGGERS
+============== Alterar demais widgets para mesma organização do alarmwdiget no forms  ===============
 Show Not Classified
 Show Information
 Show Waring
