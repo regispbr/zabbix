@@ -1,6 +1,27 @@
 
 Todos Devem ter os seguintes filtros
 
+##hosts
+host groups
+hosts
+exclude hosts
+exclude host in maintenance
+
+#problems
+problem tags
+problem status (all, problem, resolved)
+show ack problems
+show supressed problems
+
+#Triggers/Alarms
+Show Not Classified
+Show Information
+Show Waring
+Show Average
+Show High
+Show Disaster
+
+Modulos Atuais - Histório
 
 ## Alarm Widdget
 
@@ -11,3 +32,12 @@ Todos Devem ter os seguintes filtros
 ## mapwidget
 
 ## text Widget
+
+Próximos Modulos
+
+Contador baseado em filtros
+ - Hosts (Enable, Disable, Mainantence)
+ - Alamrms (Problems, Supressed, ACK, por Serviridade)
+- Items (Ativos, Disativados, erro)
+
+
