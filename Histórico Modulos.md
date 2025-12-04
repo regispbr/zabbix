@@ -25,7 +25,7 @@ Show Disaster
 ## Observações
 Validar correlação dos alarmes, exibir e contar apenas aqueles que estão realmente ativos.
 
-Modulos Atuais - Histório
+# Modulos Atuais - Histório
 
 ## Alarm Widdget
 -> Está exibindo alarmes que possuem co-relação. Deve mostrar somente o ativo
