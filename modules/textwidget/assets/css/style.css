@@ -1,0 +1,108 @@
+/*
+** Zabbix
+** Copyright (C) 2001-2023 Zabbix SIA
+**
+** This program is free software; you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation; either version 2 of the License, or
+** (at your option) any later version.
+**
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+** GNU General Public License for more details.
+**
+** You should have received a copy of the GNU General Public License
+** along with this program; if not, write to the Free Software
+** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+**/
+
+/* Text Widget Styles */
+.text-widget {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* Hide the default Zabbix loader */
+.text-widget.is-loading::before,
+.text-widget.is-loading::after {
+	display: none !important;
+}
+
+.text-widget-container {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	display: block;
+	box-sizing: border-box;
+	overflow: auto;
+	word-wrap: break-word;
+	overflow-wrap: break-word;
+	hyphens: auto;
+	white-space: pre-wrap;
+}
+
+.text-widget-container[contenteditable="true"] {
+	outline: 2px dashed #4CAF50;
+	outline-offset: -2px;
+	cursor: text;
+}
+
+.text-widget-container[contenteditable="true"]:focus {
+	outline: 2px solid #4CAF50;
+}
+
+.text-widget-container[contenteditable="true"]:hover {
+	background-color: rgba(76, 175, 80, 0.1) !important;
+}
+
+/* Preview styles for edit form */
+.text-widget-preview {
+	margin-top: 15px;
+	padding: 10px;
+	border: 1px solid #ccc;
+	background-color: #f9f9f9;
+	border-radius: 4px;
+}
+
+.text-widget-preview label {
+	font-weight: bold;
+	display: block;
+	margin-bottom: 5px;
+}
+
+.preview-content {
+	min-height: 50px;
+	border: 1px solid #ddd;
+	background-color: #fff;
+	border-radius: 3px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+	.text-widget-container {
+		font-size: 12px !important;
+		padding: 5px !important;
+	}
+}
+
+/* Print styles */
+@media print {
+	.text-widget-container[contenteditable="true"] {
+		outline: none;
+	}
+}
+
+/* Dark theme support */
+.theme-dark .text-widget-preview {
+	background-color: #2b2b2b;
+	border-color: #555;
+}
+
+.theme-dark .preview-content {
+	background-color: #1a1a1a;
+	border-color: #444;
+	color: #fff;
+}
