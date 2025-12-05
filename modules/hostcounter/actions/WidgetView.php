@@ -23,7 +23,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$custom_icon = $this->fields_values['custom_icon'] ?? '';
 
-		// Get host counts
 		$counts = $this->getHostCounts($hostgroups, $hosts, [
 			'count_problems' => $count_problems,
 			'count_items' => $count_items,
@@ -64,7 +63,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			];
 		}
 
-		// Base host query
 		$host_params = [
 			'output' => ['hostid', 'name', 'status', 'maintenance_status'],
 			'preservekeys' => true
@@ -102,7 +100,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$hostids = array_keys($all_hosts);
 
-		// Count host statuses
 		foreach ($all_hosts as $host) {
 			if ($host['status'] == HOST_STATUS_MONITORED) {
 				$counts['active_hosts']++;
@@ -115,7 +112,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// Count problems if requested
 		if ($filters['count_problems'] && $hostids) {
 			try {
 				$problem_params = [
@@ -134,7 +130,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// Count items if requested
 		if ($filters['count_items'] && $hostids) {
 			try {
 				$counts['total_items'] = API::Item()->get([
@@ -148,7 +143,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// Count triggers if requested
 		if ($filters['count_triggers'] && $hostids) {
 			try {
 				$counts['total_triggers'] = API::Trigger()->get([
