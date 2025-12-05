@@ -33,13 +33,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
 		
-		// --- LÓGICA DE SUPRESSED ---
+		// Lógica de Suppressed
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		
-		// Se "Mostrar APENAS suprimidos" estiver marcado, somos obrigados a pedir suprimidos para a Engine
+		// Força a engine a trazer suprimidos se qualquer opção estiver marcada
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
-		// ---------------------------
 
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
@@ -53,6 +52,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		if (!empty($this->fields_values['show_column_ack'])) $show_columns[] = 'ack';
 		if (!empty($this->fields_values['show_column_age'])) $show_columns[] = 'age';
 		if (!empty($this->fields_values['show_column_time'])) $show_columns[] = 'time';
+		
 		if (empty($show_columns)) {
 			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 		}
@@ -69,8 +69,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. Chamada à Engine Nativa (CScreenProblem)
-		$data = CScreenProblem::getData([
+		// 3. Chamada à Engine Nativa (RENOMEADA para evitar conflito)
+		$engine_data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
 			'hostids' => $hostids,
@@ -86,15 +86,14 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		// 4. Hidratação Robusta (API de Trigger)
 		$triggerIds = [];
-		if (!empty($data['problems'])) {
-			foreach ($data['problems'] as $problem) {
+		if (!empty($engine_data['problems'])) {
+			foreach ($engine_data['problems'] as $problem) {
 				$triggerIds[] = $problem['objectid'];
 			}
 		}
 
 		$trigger_info_map = [];
 		if (!empty($triggerIds)) {
-			// Buscamos dados complementares
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata'],
@@ -126,8 +125,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 		// 5. Construção do Array Final
 		$problems_final = [];
 
-		if (!empty($data['problems'])) {
-			foreach ($data['problems'] as $problem) {
+		if (!empty($engine_data['problems'])) {
+			foreach ($engine_data['problems'] as $problem) {
 				$triggerid = $problem['objectid'] ?? 0;
 				
 				if (!isset($trigger_info_map[$triggerid])) continue;
@@ -139,29 +138,28 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// --- STATUS REAIS (Vindos do objeto PROBLEM da Engine) ---
-				// A Engine retorna '1' ou '0' (string ou int). Forçamos int.
+				// Dados seguros da Engine
+				$r_eventid = $problem['r_eventid'] ?? 0;
+				$clock = $problem['clock'] ?? time();
+				$severity = (int)($problem['severity'] ?? 0);
+				$name = $problem['name'] ?? _('Unknown problem');
+				
+				// Status da Engine
 				$p_ack = (int)($problem['acknowledged'] ?? 0);
 				$p_sup = (int)($problem['suppressed'] ?? 0);
 
 				// --- FILTRO ONLY SUPPRESSED ---
-				// Se "Apenas Suprimidos" estiver marcado E o problema NÃO for suprimido -> PULA.
 				if ($show_suppressed_only == 1 && $p_sup == 0) {
-					continue;
+					continue; // Pula não-suprimidos
 				}
 
 				// --- FILTRO PROBLEM STATUS ---
-				$r_eventid = $problem['r_eventid'] ?? 0;
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
 					if ($r_eventid == 0) continue; // Quer resolvido, mas está ativo
 				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
 					if ($r_eventid != 0) continue; // Quer ativo, mas está resolvido
 				}
 
-				// Dados finais
-				$clock = $problem['clock'] ?? time();
-				$severity = (int)($problem['severity'] ?? 0);
-				$name = $problem['name'] ?? _('Unknown problem');
 				$age_seconds = time() - $clock;
 				
 				$problems_final[] = [
@@ -209,10 +207,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$problems_final = array_slice($problems_final, 0, $show_lines);
 
-		$response_data = [
+		// Array Final para a View
+		$data = [
 			'name' => $this->getInput('name', $this->widget->getName()),
 			'problems' => $problems_final,
-			'show_columns' => $show_columns,
+			'show_columns' => $show_columns, // Agora garantido que está aqui
 			'refresh_interval' => $this->fields_values['refresh_interval'] ?? 60,
 			'fields_values' => $this->fields_values,
 			'user' => [
