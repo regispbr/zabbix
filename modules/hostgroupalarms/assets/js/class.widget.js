@@ -398,6 +398,12 @@ class WidgetHostGroupAlarms extends CWidget {
     }
 
     setContents(response) {
+        // --- DEBUG FORÇADO ---
+        console.warn('>>> WIDGET: setContents CHAMADO <<<');
+        console.log('>>> DADOS RECEBIDOS:', response);
+        // ---------------------
+
+        // Limpa tooltips antigos
         document.querySelectorAll('.hostgroup-alarms-tooltip').forEach(el => {
             if (el) el.remove();
         });
@@ -412,19 +418,12 @@ class WidgetHostGroupAlarms extends CWidget {
         // Remove loader after content is set
         this._target.classList.remove('is-loading');
 
-        // ----- INÍCIO DA CORREÇÃO (ADIÇÃO NECESSÁRIA PARA O FILTRO) -----
-        // Armazena os fields_values para a URL
         if (response.fields_values) {
             this._fields = response.fields_values;
         }
-        // ----- FIM DA CORREÇÃO -----
 
-        // --- CORREÇÃO DE BUG (Do Arquivo 1): Chama o resize DEPOIS de setar this._fields ---
-        // Update the display after content change
         this.setContainerSize();
-        // --- FIM DA CORREÇÃO ---
 
-        // Update alarm data and widget config
         if (response.alarm_data) {
             this._vars.alarm_data = response.alarm_data;
         }
@@ -432,15 +431,14 @@ class WidgetHostGroupAlarms extends CWidget {
             this._vars.widget_config = response.widget_config;
         }
 
-        // ===============================================
-        // DEBUG: LÊ O LOG DO PHP E MOSTRA NO CONSOLE
-        // ===============================================
-        if (response.debug_log && response.debug_log.length > 0) {
-            console.group(`🔍 HostGroupAlarms Debug: ${response.name || 'Widget'}`);
+        // Tenta ler o log que veio do PHP
+        if (response.debug_log) {
+            console.group('🔍 PHP DEBUG LOG (Do Servidor)');
             console.table(response.debug_log);
             console.groupEnd();
+        } else {
+            console.error('>>> O PHP NÃO ENVIOU O CAMPO debug_log <<<');
         }
-        // ===============================================
 
         // Re-initialize body element and event listeners
         if (this._body) {
@@ -467,3 +465,4 @@ class WidgetHostGroupAlarms extends CWidget {
         return 30;
     }
 }
+
