@@ -13,7 +13,7 @@ use Modules\HostGroupAlarms\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// Define constantes de fallback caso o Zabbix não as exporte
+		// Define constantes de fallback
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
@@ -85,6 +85,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if (!isset($data['triggers'][$triggerid])) continue;
 				$trigger = $data['triggers'][$triggerid];
 				
+				// Pega o primeiro host do trigger
 				$first_host_raw = null;
 				if (!empty($trigger['hosts'])) {
 					$first_host_raw = reset($trigger['hosts']);
@@ -94,9 +95,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 				$host_id = $first_host_raw['hostid'];
 				
-                // --- CORREÇÃO AQUI ---
-                // Usa coalescência nula para evitar o warning
-				$host_maintenance_status = $first_host_raw['maintenance_status'] ?? 0; 
+				// --- CORREÇÃO BLINDADA: Status de Manutenção ---
+				// Verifica explicitamente se a chave existe antes de ler
+				$host_maintenance_status = 0;
+				if (is_array($first_host_raw) && array_key_exists('maintenance_status', $first_host_raw)) {
+					$host_maintenance_status = (int)$first_host_raw['maintenance_status'];
+				}
 
 				// --- FILTROS MANUAIS ---
 				// 1. Exclude Hosts
@@ -105,6 +109,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				// 2. Maintenance
 				if ($exclude_maintenance == 1 && $host_maintenance_status == 1) continue;
 
+				// Contagem
 				$severity = (int)($problem['severity'] ?? 0);
 				$alarm_counts[$severity]++;
 				$total_alarms++;
@@ -113,23 +118,27 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
-				// --- DADOS PARA O TOOLTIP ---
+				// --- CORREÇÃO BLINDADA: Nome do Host ---
+				// Tenta 'name', se falhar tenta 'host', se falhar usa 'Unknown'
 				$host_name_display = _('Unknown host');
-				if (isset($data['triggers_hosts'][$triggerid])) {
-					// Pega o nome do host bruto se disponível
-					$host_name_display = $first_host_raw['name'] ?? _('Unknown host'); 
+				if (is_array($first_host_raw)) {
+					if (!empty($first_host_raw['name'])) {
+						$host_name_display = $first_host_raw['name'];
+					} elseif (!empty($first_host_raw['host'])) {
+						$host_name_display = $first_host_raw['host'];
+					}
 				}
 
 				$p_ack = (int)($problem['acknowledged'] ?? 0);
 				$p_sup = (int)($problem['suppressed'] ?? 0);
-
+				
 				$detailed_alarms[] = [
 					'eventid' => $problem['eventid'],
 					'triggerid' => $triggerid,
 					'description' => $problem['name'],
 					'severity' => $severity,
 					'severity_name' => CSeverityHelper::getName($severity),
-					'host_name' => $host_name_display,
+					'host_name' => $host_name_display, // Valor garantido
 					'clock' => $problem['clock'],
 					'acknowledged' => $p_ack,
 					'suppressed' => $p_sup
