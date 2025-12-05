@@ -13,9 +13,8 @@ use Modules\HostGroupAlarms\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// Constantes de fallback
+		// Define constantes de fallback caso o Zabbix não as exporte
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
-		if (!defined('EVENT_ACKNOWLEDGED')) define('EVENT_ACKNOWLEDGED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
@@ -52,8 +51,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$ack_status = ($show_acknowledged == 1) ? ZBX_ACK_STATUS_ALL : ZBX_ACK_STATUS_UNACK;
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 2. Chama Engine Nativa (CScreenProblem)
-		// Esta função retorna ['problems' => [...], 'triggers' => [...]]
+		// 2. Chama Engine Nativa
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $hostgroups,
@@ -76,20 +74,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		if (!empty($data['problems'])) {
 			
-			// --- CORREÇÃO: Mapeamento de Hosts ---
-			// CScreenProblem retorna triggers, e triggers têm hosts.
-			// Precisamos criar um mapa seguro triggerid -> host
+			// --- MAPA DE HOSTS SEGURO ---
 			$trigger_host_map = [];
 			if (!empty($data['triggers'])) {
 				foreach ($data['triggers'] as $triggerid => $trigger) {
-					// Pega o primeiro host (padrão do Zabbix para listas simples)
-					// Se o trigger pertencer a múltiplos hosts, o Zabbix geralmente exibe o primeiro ou lista todos.
-					// Aqui pegaremos o primeiro para simplificar a visualização no card.
 					if (!empty($trigger['hosts'])) {
+						// Pega o primeiro host disponível
 						$first_host = reset($trigger['hosts']);
+						
+						// CORREÇÃO DOS ERROS:
+						// Usamos '??' para garantir que nunca seja null, evitando o erro "Undefined array key"
 						$trigger_host_map[$triggerid] = [
-							'id' => $first_host['hostid'],
-							'name' => $first_host['name'],
+							'id' => $first_host['hostid'] ?? 0,
+							'name' => $first_host['name'] ?? _('Unknown host'), 
 							'maintenance' => $first_host['maintenance_status'] ?? 0
 						];
 					}
@@ -99,28 +96,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 			foreach ($data['problems'] as $problem) {
 				$triggerid = $problem['objectid'] ?? 0;
 				
-				// Se não temos dados do trigger, pulamos (consistência de dados)
 				if (!isset($data['triggers'][$triggerid])) continue;
-				
-				// Se não temos host mapeado, pulamos (ou definimos como Unknown se preferir não filtrar)
 				if (!isset($trigger_host_map[$triggerid])) continue;
 
 				$host_info = $trigger_host_map[$triggerid];
 				
-				// --- FILTROS MANUAIS (Exclude & Maintenance) ---
-				// Aplicamos aqui porque o CScreenProblem pode não filtrar 'exclude_hosts' nativamente
-				// e a lógica de manutenção pode ser complexa.
-				
+				// --- FILTROS ---
 				// 1. Exclude Hosts
 				if (in_array($host_info['id'], $exclude_hosts)) continue;
 
 				// 2. Maintenance
-				// Se a opção "Exclude hosts in maintenance" estiver MARCADA (1)
-				// E o host estiver em manutenção (1), PULAMOS este problema.
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-
-				// Se passou pelos filtros, contabiliza
+				// Contagem
 				$severity = (int)($problem['severity'] ?? 0);
 				$alarm_counts[$severity]++;
 				$total_alarms++;
@@ -129,15 +117,14 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
-				// --- DADOS PARA O TOOLTIP ---
+				// Dados para o Tooltip
 				$p_name = $problem['name'] ?? _('Unknown problem');
 				
-				// Ack: A API retorna '1' para ack, '0' para não.
+				// CORREÇÃO DO ACK:
+				// Passamos o inteiro direto (1 ou 0). O JS vai interpretar 1 como true.
 				$p_ack = (int)($problem['acknowledged'] ?? 0);
 				
-				// Suppressed: A API retorna '1' para sim, '0' para não.
 				$p_sup = (int)($problem['suppressed'] ?? 0);
-				
 				$p_eventid = $problem['eventid'] ?? 0;
 				$p_clock = $problem['clock'] ?? time();
 
@@ -147,14 +134,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'description' => $p_name,
 					'severity' => $severity,
 					'severity_name' => CSeverityHelper::getName($severity),
-					'host_name' => $host_info['name'], // Usamos o nome resolvido do mapa
+					'host_name' => $host_info['name'], // Agora garantido que é string
 					'clock' => $p_clock,
-					'acknowledged' => $p_ack, // Passa 1 ou 0 direto
+					'acknowledged' => $p_ack, 
 					'suppressed' => $p_sup
 				];
 			}
 		}
 
+		// Ordenação
 		usort($detailed_alarms, function($a, $b) {
 			if ($a['severity'] === $b['severity']) {
 				return $b['clock'] - $a['clock'];
@@ -162,7 +150,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return $b['severity'] - $a['severity'];
 		});
 
-		// 4. Group Name
+		// 4. Nome do Grupo
 		$group_name = '';
 		if ($this->fields_values['show_group_name'] ?? 1) {
 			if (!empty($this->fields_values['group_name_text'])) {
