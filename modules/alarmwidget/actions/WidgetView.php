@@ -108,9 +108,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
+				// --- CORREÇÃO AQUI: Capturando Ack E Suppressed ---
 				$ack_status_trigger = 0;
+				$sup_status_trigger = 0;
 				if (!empty($trig['lastEvent'])) {
 					$ack_status_trigger = (int)($trig['lastEvent']['acknowledged'] ?? 0);
+					$sup_status_trigger = (int)($trig['lastEvent']['suppressed'] ?? 0);
 				}
 
 				$opdata = $trig['opdata'] ?? '';
@@ -118,6 +121,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
 					'ack' => $ack_status_trigger,
+					'sup' => $sup_status_trigger, // Armazena o suppressed
 					'opdata' => $opdata
 				];
 			}
@@ -139,8 +143,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// --- DADOS SEGUROS DO PROBLEMA ---
-				// Usa ?? para evitar "Undefined array key"
+				// Dados seguros
 				$r_eventid = $problem['r_eventid'] ?? 0;
 				$clock = $problem['clock'] ?? time();
 				$severity = (int)($problem['severity'] ?? 0);
@@ -153,19 +156,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'objectid' => $triggerid,
 					'name' => $name,
 					'severity' => $severity,
-					
-					// CORREÇÃO AQUI: Usa a variável segura $r_eventid
 					'status' => ($r_eventid != 0) ? 'RESOLVED' : 'PROBLEM',
-					
 					'clock' => $clock,
 					'time' => date('d M Y H:i:s', $clock),
 					'age' => $this->formatAge($age_seconds),
 					'age_seconds' => $age_seconds,
-					
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
 					
 					'ack_count' => $info['ack'],
+					'suppressed' => $info['sup'], // --- PASSANDO PARA O FRONTEND ---
 					'operational_data' => $info['opdata']
 				];
 			}
