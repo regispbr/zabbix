@@ -432,6 +432,16 @@ class WidgetHostGroupAlarms extends CWidget {
             this._vars.widget_config = response.widget_config;
         }
 
+        // ===============================================
+        // DEBUG: LÊ O LOG DO PHP E MOSTRA NO CONSOLE
+        // ===============================================
+        if (response.debug_log && response.debug_log.length > 0) {
+            console.group(`🔍 HostGroupAlarms Debug: ${response.name || 'Widget'}`);
+            console.table(response.debug_log);
+            console.groupEnd();
+        }
+        // ===============================================
+
         // Re-initialize body element and event listeners
         if (this._body) {
             this._body.removeEventListener('click', this.onWidgetClick.bind(this));
