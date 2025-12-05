@@ -92,6 +92,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 	}
 
 	private function getAlarmData(array $hostgroups, array $hosts, array $exclude_hosts, array $severity_filters, array $problem_filters): array {
+		
+        // --- INICIO DEBUG EM ARQUIVO ---
+        $log_file = '/tmp/widget_debug.txt'; // Tenta escrever neste arquivo
+        $log_data = "--- INICIO EXECUCAO " . date('H:i:s') . " ---\n";
+        // -------------------------------
+
 		$alarm_counts = [
 			WidgetForm::SEVERITY_NOT_CLASSIFIED => 0,
 			WidgetForm::SEVERITY_INFORMATION => 0,
@@ -104,11 +110,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$detailed_alarms = [];
 		$debug_log = [];
 
-		if (empty($hostgroups) && empty($hosts)) {
-			return ['counts' => $alarm_counts, 'total' => 0, 'highest_severity' => -1, 'detailed_alarms' => [], 'debug_log' => []];
-		}
-
-		// Filtro de Hosts
 		$host_filter = [];
 		if (!empty($hosts)) {
 			$host_filter['hostids'] = $hosts;
@@ -120,11 +121,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$host_filter['hostids'] = array_diff($host_filter['hostids'], $exclude_hosts);
 		}
 
-		// Busca Triggers (MÉTODO ORIGINAL)
 		$params = [
 			'output' => ['triggerid', 'priority', 'description', 'lastchange', 'value'],
 			'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-			'selectLastEvent' => ['eventid', 'clock', 'acknowledged', 'suppressed'], // Adicionado 'suppressed'
+			'selectLastEvent' => ['eventid', 'clock', 'acknowledged', 'suppressed'],
 			'filter' => ['value' => TRIGGER_VALUE_TRUE],
 			'monitored' => true,
 			'skipDependent' => true,
@@ -138,23 +138,22 @@ class WidgetView extends CControllerDashboardWidgetView {
 		// API Call
 		$triggers = \API::Trigger()->get($params);
 
+        $log_data .= "Triggers encontradas na API: " . count($triggers) . "\n";
+
+        // ... (Blocos de exclusão de host e manutenção mantidos iguais ao seu original) ...
 		// Exclusão manual de hosts
 		if (!empty($exclude_hosts) && !empty($host_filter['groupids'])) {
 			$triggers = array_filter($triggers, function ($trigger) use ($exclude_hosts) {
 				foreach ($trigger['hosts'] as $host) {
-					if (in_array($host['hostid'], $exclude_hosts)) {
-						return false;
-					}
+					if (in_array($host['hostid'], $exclude_hosts)) return false;
 				}
 				return true;
 			});
 		}
 
-		// Filtro de Manutenção (Exclude hosts in maintenance)
-		// Verifica o status do primeiro host da trigger
+		// Filtro de Manutenção
 		if ($problem_filters['exclude_maintenance'] == 1) {
 			$triggers = array_filter($triggers, function ($trigger) {
-				// 0 = Sem manutenção, 1 = Em manutenção
 				return isset($trigger['hosts'][0]) && $trigger['hosts'][0]['maintenance_status'] == 0; 
 			});
 		}
@@ -165,60 +164,66 @@ class WidgetView extends CControllerDashboardWidgetView {
 		foreach ($triggers as $trigger) {
 			$severity = (int)$trigger['priority'];
 
-			// Pega dados do Último Evento
 			$acknowledged = 0;
 			$suppressed = 0;
 			
 			if (!empty($trigger['lastEvent'])) {
 				$acknowledged = (int)($trigger['lastEvent']['acknowledged'] ?? 0);
 				$suppressed = (int)($trigger['lastEvent']['suppressed'] ?? 0);
-			}
+			} else {
+                // Se não tem lastEvent, é um trigger orfão ou erro de API
+                $log_data .= "ALERTA: Trigger " . $trigger['triggerid'] . " sem lastEvent!\n";
+            }
 
-			// --- LÓGICA DE FILTRO (ORIGINAL) COM LOG ---
 			$is_kept = true;
 			$reason = 'OK';
 
-			// 1. Filtro ACK
-			// Se checkbox "Show Ack" estiver DESMARCADO (0) e evento for Ack (1), REMOVE.
+            // --- DEBUG ESPECÍFICO DOS FILTROS ---
 			if ($problem_filters['show_acknowledged'] == 0 && $acknowledged == 1) {
 				$is_kept = false;
-				$reason = 'Filtered by ACK';
+				$reason = 'Filtrado por ACK';
 			}
 
-			// 2. Filtro Suppressed
-			// Se checkbox "Show Suppressed" estiver DESMARCADO (0) e evento for Suppressed (1), REMOVE.
 			if ($is_kept && $problem_filters['show_suppressed'] == 0 && $suppressed == 1) {
 				$is_kept = false;
-				$reason = 'Filtered by SUPPRESSED';
+				$reason = 'Filtrado por SUPRESSED';
 			}
 			
-			// 3. Filtro Severidade
 			if ($is_kept && empty($severity_filters[$severity])) {
 				$is_kept = false;
-				$reason = 'Filtered by SEVERITY';
+				$reason = 'Filtrado por SEVERIDADE';
 			}
+            // ------------------------------------
 
-			// --- DEBUG LOG ---
+			// Dados para o log do Console
 			$debug_log[] = [
 				'Trigger' => $trigger['description'],
 				'Host' => $trigger['hosts'][0]['name'] ?? 'Unknown',
-				'Severity' => $severity,
-				'Is_Ack' => $acknowledged,
-				'Is_Suppressed' => $suppressed,
-				'RESULT' => $is_kept ? 'KEPT' : 'DROPPED',
-				'Reason' => $reason
+				'ACK_VAL' => $acknowledged,
+				'SUP_VAL' => $suppressed,
+				'FILTER_ACK' => $problem_filters['show_acknowledged'],
+				'FILTER_SUP' => $problem_filters['show_suppressed'],
+				'RESULT' => $reason
 			];
-			// -----------------
+
+            // Dados para o arquivo de texto
+            $log_data .= sprintf(
+                "[%s] %s | Ack:%d (Show:%d) | Sup:%d (Show:%d) | %s\n", 
+                $reason, 
+                $trigger['description'], 
+                $acknowledged, $problem_filters['show_acknowledged'],
+                $suppressed, $problem_filters['show_suppressed'],
+                ($is_kept ? "MANTIDO" : "REMOVIDO")
+            );
 
 			if ($is_kept) {
 				$alarm_counts[$severity]++;
 				$total_alarms++;
-				
 				if ($severity > $highest_severity) {
 					$highest_severity = $severity;
 				}
-
-				$detailed_alarms[] = [
+                // ... (montagem do detailed_alarms igual ao original) ...
+                $detailed_alarms[] = [
 					'triggerid' => $trigger['triggerid'],
 					'description' => $trigger['description'],
 					'severity' => $severity,
@@ -233,7 +238,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// Ordenação
+        // Tenta salvar o arquivo no servidor
+        @file_put_contents($log_file, $log_data, FILE_APPEND);
+        // Também joga no log de erro do PHP por garantia
+        // error_log($log_data); 
+
 		usort($detailed_alarms, function($a, $b) {
 			if ($a['severity'] === $b['severity']) {
 				return $b['clock'] - $a['clock'];
@@ -280,3 +289,4 @@ class WidgetView extends CControllerDashboardWidgetView {
 		return in_array($severity, $light_backgrounds) ? '#000000' : '#FFFFFF';
 	}
 }
+
