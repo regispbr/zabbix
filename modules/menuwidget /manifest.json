@@ -5,7 +5,7 @@
 	"version": "1.0.0",
 	"namespace": "MenuWidget",
 	"description": "Widget de menu personalizável com suporte a orientação horizontal/vertical, URLs e imagens",
-	"author": "Custom Development",
+	"author": "Reginaldo Costa",
 	"url": "",
 	"actions": [
 		{
