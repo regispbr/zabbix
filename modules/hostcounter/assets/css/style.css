@@ -1,9 +1,7 @@
 /*
-** Zabbix
-** Copyright (C) 2001-2023 Zabbix SIA
+** Host Counter Widget Styles
 */
 
-/* Host Counter Widget Styles */
 .hostcounter-container {
 	position: relative;
 	width: 100%;
@@ -65,7 +63,6 @@
 	z-index: 10;
 }
 
-/* Responsive design */
 @media (max-width: 768px) {
 	.hostcounter-grid {
 		flex-direction: column;
@@ -74,20 +71,5 @@
 	.counter-item {
 		width: 100%;
 		max-width: 200px;
-	}
-}
-
-@media (max-width: 480px) {
-	.counter-item {
-		min-width: 60px;
-		padding: 8px;
-	}
-	
-	.counter-value {
-		font-size: 20px !important;
-	}
-	
-	.counter-label {
-		font-size: 10px !important;
 	}
 }
