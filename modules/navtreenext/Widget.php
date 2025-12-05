@@ -20,7 +20,8 @@ class Widget extends CWidget {
 	
 	public function getFields(): array {
 		return [
-			new CWidgetFieldNavigationTree('navtree', _('Navigation tree'))
+			new \Zabbix\Widgets\Fields\CWidgetFieldNavTree('navtree', _('Navigation tree')),
+			new \Zabbix\Widgets\Fields\CWidgetFieldCheckBox('show_unavailable', _('Show unavailable maps'))
 		];
 	}
 	
