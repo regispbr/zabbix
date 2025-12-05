@@ -26,28 +26,28 @@ $form = new CWidgetFormView($data);
 foreach ($data['fields']['navtree']->getValue() as $i => $navtree_item) {
 	$form->addVar($data['fields']['navtree']->getName().'['.$i.'][name]', $navtree_item['name']);
 
-	if ($navtree_item['order'] != 1) {
-		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][order]', $navtree_item['order']);
+	if (array_key_exists('order', $navtree_item) && $navtree_item['order'] != 1) {
+		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][order]', (string)$navtree_item['order']);
 	}
 
-	if ($navtree_item['parent'] != 0) {
-		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][parent]', $navtree_item['parent']);
+	if (array_key_exists('parent', $navtree_item) && $navtree_item['parent'] != 0) {
+		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][parent]', (string)$navtree_item['parent']);
 	}
 
 	if (array_key_exists('link_type', $navtree_item)) {
-		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][link_type]', $navtree_item['link_type']);
+		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][link_type]', (string)$navtree_item['link_type']);
 	}
 
-	if (array_key_exists('sysmapid', $navtree_item)) {
-		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][sysmapid]', $navtree_item['sysmapid']);
+	if (array_key_exists('sysmapid', $navtree_item) && $navtree_item['sysmapid'] != 0) {
+		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][sysmapid]', (string)$navtree_item['sysmapid']);
 	}
 
-	if (array_key_exists('dashboardid', $navtree_item)) {
-		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][dashboardid]', $navtree_item['dashboardid']);
+	if (array_key_exists('dashboardid', $navtree_item) && $navtree_item['dashboardid'] != 0) {
+		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][dashboardid]', (string)$navtree_item['dashboardid']);
 	}
 
-	if (array_key_exists('url', $navtree_item)) {
-		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][url]', $navtree_item['url']);
+	if (array_key_exists('url', $navtree_item) && $navtree_item['url'] !== '' && $navtree_item['url'] !== null) {
+		$form->addVar($data['fields']['navtree']->getName().'['.$i.'][url]', (string)$navtree_item['url']);
 	}
 }
 
