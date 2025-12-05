@@ -1,9 +1,4 @@
 <?php declare(strict_types = 0);
-/*
-** Zabbix
-** Copyright (C) 2001-2023 Zabbix SIA
-** ... (Licença) ...
-**/
 
 namespace Modules\HostGroupStatus\Actions;
 
@@ -25,19 +20,17 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'tags' => $this->fields_values['tags'] ?? [],
 			'show_acknowledged' => $this->fields_values['show_acknowledged'] ?? 1,
 			'show_suppressed' => $this->fields_values['show_suppressed'] ?? 0,
-			// --- MUDANÇA AQUI: Lendo o novo campo ---
 			'exclude_maintenance' => $this->fields_values['exclude_maintenance'] ?? 0
-			// --- FIM DA MUDANÇA ---
 		];
 
-		$severity_filters = [
-			WidgetForm::SEVERITY_NOT_CLASSIFIED => $this->fields_values['show_not_classified'] ?? 1,
-			WidgetForm::SEVERITY_INFORMATION => $this->fields_values['show_information'] ?? 1,
-			WidgetForm::SEVERITY_WARNING => $this->fields_values['show_warning'] ?? 1,
-			WidgetForm::SEVERITY_AVERAGE => $this->fields_values['show_average'] ?? 1,
-			WidgetForm::SEVERITY_HIGH => $this->fields_values['show_high'] ?? 1,
-			WidgetForm::SEVERITY_DISASTER => $this->fields_values['show_disaster'] ?? 1
-		];
+		// --- MUDANÇA: SEVERIDADE ---
+		$selected_severities = $this->fields_values['severities'] ?? [];
+		$severity_filters = [];
+		// Converte o array de IDs [2, 4] para mapa [0=>0, 2=>1, 4=>1, ...]
+		for ($i = 0; $i <= 5; $i++) {
+			$severity_filters[$i] = in_array($i, $selected_severities) ? 1 : 0;
+		}
+		// --- FIM DA MUDANÇA ---
 
 		// Passa o novo filtro para a função
 		$host_data = $this->getHostStatusData(
@@ -99,7 +92,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$this->setResponse(new CControllerResponseData($data));
 	}
 
-	// --- FUNÇÃO getHostStatusData ATUALIZADA ---
 	private function getHostStatusData(
 		array $hostgroups, array $hosts, array $exclude_hosts, int $count_mode,
 		array $severity_filters, array $problem_filters
@@ -108,7 +100,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return ['count' => 0];
 		}
 
-		// === PASSO 1: Obter todos os Hosts que correspondem aos filtros ===
+		// === PASSO 1: Obter todos os Hosts ===
 		$host_params = [
 			'output' => ['hostid', 'name'],
 			'monitored_hosts' => true,
@@ -117,11 +109,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'tags' => $problem_filters['tags']
 		];
 
-		// --- MUDANÇA AQUI: Adiciona filtro de manutenção ---
 		if ($problem_filters['exclude_maintenance'] == 1) {
-			$host_params['maintenance_status'] = false; // Exclui hosts em manutenção
+			$host_params['maintenance_status'] = false;
 		}
-		// --- FIM DA MUDANÇA ---
 
 		if (!empty($hosts)) {
 			$host_params['hostids'] = $hosts;
@@ -156,7 +146,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return ['count' => $total_host_count];
 		}
 
-		// === PASSO 2: Obter hosts com alarmes (que correspondem aos filtros) ===
+		// === PASSO 2: Obter hosts com alarmes ===
 		$trigger_severities = [];
 		foreach ($severity_filters as $severity => $is_enabled) {
 			if ($is_enabled) {
@@ -167,7 +157,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$hosts_with_alarms_map = [];
 		if (!empty($trigger_severities)) {
 			try {
-				// --- MUDANÇA AQUI: Adiciona filtro de manutenção também na busca de triggers ---
 				$trigger_params = [
 					'output' => ['triggerid'],
 					'selectHosts' => ['hostid'],
@@ -186,7 +175,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 				
 				$triggers = \API::Trigger()->get($trigger_params);
-				// --- FIM DA MUDANÇA ---
 
 				foreach ($triggers as $trigger) {
 					$acknowledged = $trigger['lastEvent']['acknowledged'] ?? 0;
@@ -207,14 +195,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 						}
 					}
 				}
-			} catch (\Exception $e) {
-				// Falha na API de trigger, continua com 0
-			}
+			} catch (\Exception $e) {}
 		}
 		
 		$hosts_with_alarms_count = count($hosts_with_alarms_map);
 
-		// === PASSO 3: Calcular o resultado final ===
+		// === PASSO 3: Calcular ===
 		$count = 0;
 		switch ($count_mode) {
 			case WidgetForm::COUNT_MODE_WITH_ALARMS:
@@ -225,9 +211,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				break;
 		}
 
-		return [
-			'count' => $count
-		];
+		return ['count' => $count];
 	}
 
 	private function getContrastColor(string $hex_color): string {
