@@ -7,149 +7,122 @@ use Modules\TableModuleRME\Includes\WidgetForm;
 window.widget_tablemodulerme_form = new class {
 
 	/**
-	 * Widget form.
-	 *
 	 * @type {HTMLFormElement}
 	 */
 	#form;
 
 	/**
-	 * Template id.
-	 *
 	 * @type {string}
 	 */
 	#templateid;
 
 	/**
-	 * Column list container.
-	 *
 	 * @type {HTMLElement}
 	 */
 	#list_columns;
 
 	/**
-	 * Column list entry template.
-	 *
 	 * @type {Template}
 	 */
 	#list_column_tmpl;
 
 	init({templateid}) {
-		// Busca o formulário de forma segura
 		this.#form = document.getElementById('widget-dialogue-form');
 		this.#list_columns = document.getElementById('list_columns');
 		
-		if (!this.#list_columns) {
-			console.error('TableModuleRME: List columns container not found.');
+		if (!this.#list_columns || !this.#form) {
+			console.error('TableModuleRME: Form or Column list not found.');
 			return;
 		}
 
 		this.#list_column_tmpl = new Template(this.#list_columns.querySelector('template').innerHTML);
 		this.#templateid = templateid;
 
-		// Inicializa o estado do formulário
 		this.#updateForm();
 
-		// Listeners de eventos
 		this.#list_columns.addEventListener('click', (e) => this.#processColumnsAction(e));
 		
-		// Listener para campos de ordenação
 		const ordering_fields = this.#form.querySelectorAll('[name="host_ordering_order_by"], [name="item_ordering_order_by"]');
-		if (ordering_fields.length > 0) {
-			for (let i = 0; i < ordering_fields.length; i++) {
-				ordering_fields[i].addEventListener('change', () => this.#updateForm());
-			}
-		}
+		Array.from(ordering_fields).forEach(element => {
+			element.addEventListener('change', () => this.#updateForm());
+		});
 
-		// Listeners para Multiselects e Radio buttons
-		// Usamos jQuery para compatibilidade com componentes legados do Zabbix se necessário, 
-		// mas preferimos vanilla JS para eventos de mudança simples
+		// Listeners para inputs de layout
+		const layoutInputs = this.#form.querySelectorAll('input[name="layout"]');
+		Array.from(layoutInputs).forEach(input => {
+			input.addEventListener('change', () => this.#updateForm());
+		});
+
+		// Listeners jQuery para Multiselects
 		const groupIdsEl = document.getElementById('groupids_');
 		if (groupIdsEl) jQuery(groupIdsEl).on('change', () => this.#updateForm());
 
 		const hostIdsEl = document.getElementById('hostids_');
 		if (hostIdsEl) jQuery(hostIdsEl).on('change', () => this.#updateForm());
-
-		// Monitorar mudanças de layout (Inputs que começam com layout_)
-		const layoutInputs = this.#form.querySelectorAll('input[name="layout"]');
-		for (let i = 0; i < layoutInputs.length; i++) {
-			layoutInputs[i].addEventListener('change', () => this.#updateForm());
-		}
 		
 		this.#form.addEventListener('form_fields.changed', () => this.#updateForm());
 	}
 
-	/**
-	 * Updates widget column configuration form field visibility, enable/disable state and available options.
-	 */
 	#updateForm() {
 		if (!this.#form) return;
 
-		// Verifica Layouts
-		// Layout 3 = Column per pattern
-		// Layout 1 = Vertical
-		const layout3Radio = this.#form.querySelector('input[name="layout"][value="<?= WidgetForm::LAYOUT_THREE_COL ?>"]'); // ou valor especifico do column per pattern
-		// Como os valores são constantes, vamos pegar pelo ID se possível ou pelo value
-		// No seu form original: value 51 = LAYOUT_COLUMN_PER
-		const layoutColumnPerPattern = this.#form.querySelector('input[name="layout"][value="<?= WidgetForm::LAYOUT_COLUMN_PER ?>"]');
-		const layoutVertical = this.#form.querySelector('input[name="layout"][value="<?= WidgetForm::LAYOUT_VERTICAL ?>"]');
+		// Constantes locais para garantir compatibilidade
+		const LAYOUT_THREE_COL = <?= WidgetForm::LAYOUT_THREE_COL ?>;
+		const LAYOUT_COLUMN_PER = <?= WidgetForm::LAYOUT_COLUMN_PER ?>;
+		const LAYOUT_VERTICAL = <?= WidgetForm::LAYOUT_VERTICAL ?>;
 		
-		const isColumnPerPattern = layoutColumnPerPattern ? layoutColumnPerPattern.checked : false;
-		const isVertical = layoutVertical ? layoutVertical.checked : false;
+		const layout3Radio = this.#form.querySelector(`input[name="layout"][value="${LAYOUT_THREE_COL}"]`);
+		const layoutColumnPerRadio = this.#form.querySelector(`input[name="layout"][value="${LAYOUT_COLUMN_PER}"]`);
+		const layoutVerticalRadio = this.#form.querySelector(`input[name="layout"][value="${LAYOUT_VERTICAL}"]`);
+		
+		const column_per_pattern = layoutColumnPerRadio ? layoutColumnPerRadio.checked : false;
+		const vertical_layout = layoutVerticalRadio ? layoutVerticalRadio.checked : false;
 
-		// Função auxiliar SEGURA para alternar campos
+		// --- FUNÇÃO DE TOGGLE SEGURA ---
 		const toggleFields = (selector, isEnabled) => {
 			const fields = this.#form.querySelectorAll(selector);
-			if (fields.length > 0) {
-				for (let i = 0; i < fields.length; i++) {
-					const field = fields[i];
-					field.style.display = isEnabled ? '' : 'none';
-					
-					const inputs = field.querySelectorAll('input, select, textarea, button');
-					if (inputs.length > 0) {
-						for (let j = 0; j < inputs.length; j++) {
-							const input = inputs[j];
-							// VERIFICAÇÃO CRÍTICA: Só altera se o input existir
-							if (input) {
-								input.disabled = !isEnabled;
-								// Tratamento especial para delimiter
-								if (selector.includes('delimiter')) {
-									input.setAttribute('data-no-trim', '1');
-								}
-							}
+			// Converte NodeList para Array para evitar erros de iteração
+			Array.from(fields).forEach(field => {
+				field.style.display = isEnabled ? '' : 'none';
+				
+				const inputs = field.querySelectorAll('input, select, textarea, button');
+				Array.from(inputs).forEach(input => {
+					// Verifica explicitamente se o input existe antes de alterar propriedade
+					if (input) {
+						input.disabled = !isEnabled;
+						if (selector.includes('delimiter')) {
+							input.setAttribute('data-no-trim', '1');
 						}
 					}
-				}
-			}
+				});
+			});
 		};
 
-		// Aplica a lógica de toggle
-		toggleFields('.field_item_group_by', isColumnPerPattern);
-		toggleFields('.field_grouping_delimiter', isColumnPerPattern);
-		toggleFields('.field_aggregate_all_hosts', isColumnPerPattern);
-		toggleFields('.field_show_grouping_only', isColumnPerPattern);
+		// Aplica lógica de campos
+		toggleFields('.field_item_group_by', column_per_pattern);
+		toggleFields('.field_grouping_delimiter', column_per_pattern);
+		toggleFields('.field_aggregate_all_hosts', column_per_pattern);
+		toggleFields('.field_show_grouping_only', column_per_pattern);
 
-		// Lógica inversa para broadcast hostid (esconder se for Vertical)
+		// Lógica inversa para 'no_broadcast_hostid'
 		const broadcastFields = this.#form.querySelectorAll('.field_no_broadcast_hostid');
-		if (broadcastFields.length > 0) {
-			for (let i = 0; i < broadcastFields.length; i++) {
-				const field = broadcastFields[i];
-				field.style.display = isVertical ? 'none' : '';
-				const inputs = field.querySelectorAll('input');
-				if (inputs.length > 0) {
-					for (let j = 0; j < inputs.length; j++) {
-						if (inputs[j]) inputs[j].disabled = isVertical;
-					}
-				}
-			}
-		}
+		Array.from(broadcastFields).forEach(field => {
+			field.style.display = vertical_layout ? 'none' : '';
+			const inputs = field.querySelectorAll('input');
+			Array.from(inputs).forEach(input => {
+				if (input) input.disabled = vertical_layout;
+			});
+		});
 		
-		// Lógica de Ordenação
+		// Ordenação
+		const ORDERBY_HOST = <?= WidgetForm::ORDERBY_HOST ?>;
+		const ORDERBY_ITEM_VALUE = <?= WidgetForm::ORDERBY_ITEM_VALUE ?>;
+
 		const itemOrderRadio = this.#form.querySelector('[name=item_ordering_order_by]:checked');
 		const hostOrderRadio = this.#form.querySelector('[name=host_ordering_order_by]:checked');
 
-		const orderByHost = itemOrderRadio ? (parseInt(itemOrderRadio.value) === <?= WidgetForm::ORDERBY_HOST ?>) : false;
-		const orderByItemValue = hostOrderRadio ? (parseInt(hostOrderRadio.value) === <?= WidgetForm::ORDERBY_ITEM_VALUE ?>) : false;
+		const orderByHost = itemOrderRadio ? (parseInt(itemOrderRadio.value) === ORDERBY_HOST) : false;
+		const orderByItemValue = hostOrderRadio ? (parseInt(hostOrderRadio.value) === ORDERBY_ITEM_VALUE) : false;
 
 		const itemSelect = document.getElementById('host_ordering_item_');
 		if (itemSelect) {
@@ -179,19 +152,22 @@ window.widget_tablemodulerme_form = new class {
 			}
 		}
 
-		// Atualiza URLs dos Multiselects (Filtros dinâmicos)
+		// Atualização de URL dos Multiselects
 		if (hostSelect && itemSelect) {
-			// Verifica se os métodos getOption do multiselect estão disponíveis
-			const hostUrlOption = jQuery(hostSelect).multiSelect('getOption', 'url');
-			const itemUrlOption = jQuery(itemSelect).multiSelect('getOption', 'url');
+			// Verifica se o multiselect já foi inicializado pelo Zabbix
+			const $hostSelect = jQuery(hostSelect);
+			const $itemSelect = jQuery(itemSelect);
 
-			if (hostUrlOption && itemUrlOption) {
-				const urlHost = new Curl(hostUrlOption);
-				const urlItem = new Curl(itemUrlOption);
+			// Tenta pegar a opção url de forma segura
+			let hostUrlData = $hostSelect.data('multiSelect');
+			let itemUrlData = $itemSelect.data('multiSelect');
+
+			if (hostUrlData && itemUrlData && hostUrlData.options && itemUrlData.options) {
+				const urlHost = new Curl(hostUrlData.options.url);
+				const urlItem = new Curl(itemUrlData.options.url);
 				
 				const formFields = getFormFields(this.#form);
 
-				// Groups
 				if (formFields.groupids !== undefined) {
 					urlHost.setArgument('groupids', formFields.groupids);
 					urlItem.setArgument('groupids', formFields.groupids);
@@ -200,30 +176,26 @@ window.widget_tablemodulerme_form = new class {
 					urlItem.unsetArgument('groupids');
 				}
 
-				// Hosts
 				if (formFields.hostids !== undefined) {
 					urlItem.setArgument('hostids', formFields.hostids);
 				} else {
 					urlItem.unsetArgument('hostids');
 				}
 
-				// Items (Columns)
-				if (formFields.columns !== undefined) {
+				if (formFields.columns !== undefined && typeof formFields.columns === 'object') {
 					const items = [];
-					if (typeof formFields.columns === 'object' && formFields.columns !== null) {
-						Object.values(formFields.columns).forEach((column) => {
-							if (column.items && typeof column.items === 'object') {
-								items.push(...Object.values(column.items));
-							}
-						});
-					}
+					Object.values(formFields.columns).forEach((column) => {
+						if (column.items && typeof column.items === 'object') {
+							items.push(...Object.values(column.items));
+						}
+					});
 					urlItem.setArgument('items', items);
 				} else {
 					urlItem.unsetArgument('items');
 				}
 
-				jQuery(hostSelect).multiSelect('modify', {url: urlHost.getUrl()});
-				jQuery(itemSelect).multiSelect('modify', {url: urlItem.getUrl()});
+				$hostSelect.multiSelect('modify', {url: urlHost.getUrl()});
+				$itemSelect.multiSelect('modify', {url: urlItem.getUrl()});
 			}
 		}
 	}
@@ -321,7 +293,6 @@ window.widget_tablemodulerme_form = new class {
 		row.dataset.index = index;
 		const columnData = row.querySelector('.js-column-data');
 		
-		// Função helper para criar inputs hidden
 		const addVar = (name, value) => {
 			const input = document.createElement('input');
 			input.setAttribute('type', 'hidden');
@@ -333,7 +304,7 @@ window.widget_tablemodulerme_form = new class {
 		for (const [key, value] of Object.entries(data)) {
 			if (key === 'edit') continue;
 
-			if (key === 'thresholds') {
+			if (key === 'thresholds' && typeof value === 'object') {
 				for (const [k, v] of Object.entries(value)) {
 					addVar(`columns[${index}][thresholds][${k}][color]`, v.color);
 					addVar(`columns[${index}][thresholds][${k}][threshold]`, v.threshold);
@@ -341,7 +312,7 @@ window.widget_tablemodulerme_form = new class {
 				continue;
 			}
 
-			if (key === 'highlights') {
+			if (key === 'highlights' && typeof value === 'object') {
 				for (const [k, v] of Object.entries(value)) {
 					addVar(`columns[${index}][highlights][${k}][color]`, v.color);
 					addVar(`columns[${index}][highlights][${k}][pattern]`, v.pattern);
@@ -349,23 +320,23 @@ window.widget_tablemodulerme_form = new class {
 				continue;
 			}
 
-			if (key === 'items') {
+			if (key === 'items' && typeof value === 'object') {
 				for (const [k, v] of Object.entries(value)) {
 					addVar(`columns[${index}][items][${k}]`, v);
 				}
 				continue;
 			}
 
-			if (key === 'time_period') {
+			if (key === 'time_period' && typeof value === 'object') {
 				for (const [k, v] of Object.entries(value)) {
 					addVar(`columns[${index}][time_period][${k}]`, v);
 				}
 				continue;
 			}
 
-			if (key === 'sparkline') {
+			if (key === 'sparkline' && typeof value === 'object') {
 				for (const [k, v] of Object.entries(value)) {
-					if (k === 'time_period') {
+					if (k === 'time_period' && typeof v === 'object') {
 						for (const [sk, sv] of Object.entries(v)) {
 							addVar(`columns[${index}][sparkline][time_period][${sk}]`, sv);
 						}
@@ -376,7 +347,7 @@ window.widget_tablemodulerme_form = new class {
 				continue;
 			}
 
-			if (key === 'item_tags') {
+			if (key === 'item_tags' && typeof value === 'object') {
 				for (const [k, v] of Object.entries(value)) {
 					addVar(`columns[${index}][item_tags][${k}][operator]`, v.operator);
 					addVar(`columns[${index}][item_tags][${k}][tag]`, v.tag);
@@ -385,7 +356,6 @@ window.widget_tablemodulerme_form = new class {
 				continue;
 			}
 
-			// Default para valores simples
 			addVar(`columns[${index}][${key}]`, value);
 		}
 
