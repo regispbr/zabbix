@@ -57,7 +57,9 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
 
 - Incluir Problem Status nos demais widgets -> Alarmwidget para usar de base.  (4°) ⏳
 
-- Alterar demais widgets para mesma organização do filtro de severidade, ficando igual ao do alarmwdiget no forms.  (5°) ⏳
+- Alterar demais widgets para mesma organização do filtro de severidade, ficando igual ao do alarmwdiget no forms.  (5°) (✓)
 
-- Incluir filtro de exibir somente os problemas suprimidos.
+- Incluir filtro de exibir somente os problemas suprimidos. (6°)
+
+- Alterar pop-up do Hostgroupalarms para ficar igual ao do mapwidget.
 
