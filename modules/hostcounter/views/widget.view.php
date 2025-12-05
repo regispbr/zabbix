@@ -11,35 +11,31 @@
  * @var array $data
  */
 
-// Custom icon display
 $icon_html = '';
-if (!empty($data['custom_icon']) && file_exists(__DIR__ . '/../assets/' . $data['custom_icon'])) {
-	$icon_path = 'modules/hostcounter/assets/' . $data['custom_icon'];
-	$icon_html = (new CImg($icon_path))
+if (!empty($data['custom_icon'])) {
+	$icon_html = (new CDiv('📊'))
 		->addClass('hostcounter-icon')
-		->addStyle('max-width: 48px; max-height: 48px; position: absolute; top: 5px; right: 5px; z-index: 10;');
+		->addStyle('position: absolute; top: 5px; right: 5px; font-size: 24px; z-index: 10;');
 }
 
-// Build counters display
 $counters = [];
 $counts = $data['counts'] ?? [];
 
-// Always show total hosts
 $counters[] = [
-	'label' => _('Total de Hosts'),
+	'label' => _('Total Hosts'),
 	'value' => $counts['total_hosts'] ?? 0,
 	'class' => 'counter-total'
 ];
 
 $counters[] = [
-	'label' => _('Hosts Ativos'),
+	'label' => _('Active Hosts'),
 	'value' => $counts['active_hosts'] ?? 0,
 	'class' => 'counter-active'
 ];
 
 if ($data['count_disabled']) {
 	$counters[] = [
-		'label' => _('Hosts Desativados'),
+		'label' => _('Disabled Hosts'),
 		'value' => $counts['disabled_hosts'] ?? 0,
 		'class' => 'counter-disabled'
 	];
@@ -47,7 +43,7 @@ if ($data['count_disabled']) {
 
 if ($data['count_maintenance']) {
 	$counters[] = [
-		'label' => _('Hosts em Manutenção'),
+		'label' => _('Maintenance Hosts'),
 		'value' => $counts['maintenance_hosts'] ?? 0,
 		'class' => 'counter-maintenance'
 	];
@@ -55,7 +51,7 @@ if ($data['count_maintenance']) {
 
 if ($data['count_problems']) {
 	$counters[] = [
-		'label' => _('Problemas'),
+		'label' => _('Problems'),
 		'value' => $counts['total_problems'] ?? 0,
 		'class' => 'counter-problems'
 	];
@@ -63,7 +59,7 @@ if ($data['count_problems']) {
 
 if ($data['count_items']) {
 	$counters[] = [
-		'label' => _('Itens'),
+		'label' => _('Items'),
 		'value' => $counts['total_items'] ?? 0,
 		'class' => 'counter-items'
 	];
@@ -77,14 +73,12 @@ if ($data['count_triggers']) {
 	];
 }
 
-// Build widget content
 $widget_content = new CDiv();
 
 if ($icon_html) {
 	$widget_content->addItem($icon_html);
 }
 
-// Counter grid
 $counter_grid = new CDiv();
 $counter_grid->addClass('hostcounter-grid');
 
