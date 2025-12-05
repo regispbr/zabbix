@@ -1,6 +1,5 @@
 /*
-** Zabbix
-** Copyright (C) 2001-2023 Zabbix SIA
+** Zabbix Host Counter Widget JavaScript
 */
 
 class WidgetHostCounter extends CWidget {
@@ -8,7 +7,6 @@ class WidgetHostCounter extends CWidget {
 	static ZBX_STYLE_CLASS = 'hostcounter-widget';
 
 	onInitialize() {
-		console.log('DEBUG [hostcounter]: Widget initialized.');
 		this._vars = {};
 		this._target.classList.remove('is-loading');
 	}
@@ -37,8 +35,6 @@ class WidgetHostCounter extends CWidget {
 	}
 
 	getUpdateRequestData() {
-		console.log('DEBUG [hostcounter]: Getting update request data...');
-		
 		const fields = this.fields_values || this._fields || {};
 		
 		return {
@@ -56,32 +52,20 @@ class WidgetHostCounter extends CWidget {
 	}
 
 	setContents(response) {
-		console.log('DEBUG [hostcounter]: Setting contents...');
-		
-		// Draw HTML
 		super.setContents(response);
 		this._target.classList.remove('is-loading');
 
-		// Populate data
 		if (response.fields_values) {
-			console.log('DEBUG [hostcounter]: Populating fields with:', response.fields_values);
 			this._fields = response.fields_values;
 		}
 
-		// Set container size
 		this.setContainerSize();
 
 		if (response.counts) {
 			this._vars.counts = response.counts;
 		}
 
-		// Find the container
 		this._body = this._target.querySelector('.hostcounter-container');
-		if (this._body !== null) {
-			console.log('DEBUG [hostcounter]: Container found successfully.');
-		} else {
-			console.error('DEBUG [hostcounter]: Container not found.');
-		}
 	}
 
 	hasPadding() {
@@ -89,6 +73,6 @@ class WidgetHostCounter extends CWidget {
 	}
 
 	getRefreshInterval() {
-		return 30; // 30 seconds
+		return 30;
 	}
 }
