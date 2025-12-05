@@ -23,7 +23,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'exclude_maintenance' => $this->fields_values['exclude_maintenance'] ?? 0
 		];
 
-		// Severidades (Array vindo do form)
+		// Severidades
 		$selected_severities = $this->fields_values['severities'] ?? [];
 		$severity_filters = [];
 		for ($i = 0; $i <= 5; $i++) {
@@ -93,41 +93,35 @@ class WidgetView extends CControllerDashboardWidgetView {
 		array $hostgroups, array $hosts, array $exclude_hosts, int $count_mode,
 		array $severity_filters, array $problem_filters
 	): array {
-		if (empty($hostgroups) && empty($hosts)) {
-			return ['count' => 0];
-		}
-
-		// === PASSO 1: Obter Hosts ===
-		// Configuração base da query de Host
+		
+		// === PASSO 1: Obter todos os Hosts ===
 		$host_params = [
-			'output' => ['hostid'], // Só precisamos do ID para contar
-			'monitored_hosts' => true, // Apenas hosts habilitados (importante!)
+			'output' => ['hostid'],
+			'monitored_hosts' => true,
 			'preservekeys' => true,
 			'evaltype' => $problem_filters['evaltype'],
 			'tags' => $problem_filters['tags']
 		];
 
-		// Filtro de Manutenção CORRIGIDO
+		// Filtro de Manutenção
 		if ($problem_filters['exclude_maintenance'] == 1) {
-			// Na API host.get:
-			// maintenance_status: 0 (sem manutenção), 1 (em manutenção)
-			// Se queremos excluir manutenção, filtramos por status 0 (HOST_MAINTENANCE_STATUS_OFF)
 			$host_params['filter']['maintenance_status'] = HOST_MAINTENANCE_STATUS_OFF;
 		}
 
 		if (!empty($hosts)) {
 			$host_params['hostids'] = $hosts;
 		} elseif (!empty($hostgroups)) {
-			$host_params['groupids'] = $hostgroups;
+			// --- CORREÇÃO AQUI: Usar getSubGroups ---
+			// Isso garante que se selecionarmos um grupo pai, pegamos todos os filhos.
+			// A função getSubGroups é nativa do Zabbix (definida globalmente).
+			$host_params['groupids'] = getSubGroups($hostgroups);
+			// --- FIM DA CORREÇÃO ---
+		} else {
+			return ['count' => 0];
 		}
 
-		// Remove hosts explicitamente excluídos da busca inicial (performance)
-		if (!empty($exclude_hosts)) {
-			// Nota: host.get não tem 'exclude_hostids' nativo, então tratamos no pós-processamento
-			// ou se já tivermos hostids definidos, usamos array_diff.
-			if (!empty($host_params['hostids'])) {
-				$host_params['hostids'] = array_diff($host_params['hostids'], $exclude_hosts);
-			}
+		if (!empty($exclude_hosts) && !empty($host_params['hostids'])) {
+			$host_params['hostids'] = array_diff($host_params['hostids'], $exclude_hosts);
 		}
 		
 		try {
@@ -136,7 +130,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return ['count' => 0];
 		}
 		
-		// Filtro de exclusão final (garantia)
 		if (!empty($exclude_hosts)) {
 			$all_hosts = array_diff_key($all_hosts, array_flip($exclude_hosts));
 		}
@@ -148,12 +141,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$total_host_count = count($all_hosts);
 		$all_host_ids = array_keys($all_hosts);
 
-		// Se o modo for "All hosts", retornamos a contagem filtrada e paramos aqui.
 		if ($count_mode === WidgetForm::COUNT_MODE_ALL) {
 			return ['count' => $total_host_count];
 		}
 
-		// === PASSO 2: Obter Triggers para Calcular "With Alarms" ===
+		// === PASSO 2: Obter hosts com alarmes ===
 		$trigger_severities = [];
 		foreach ($severity_filters as $severity => $is_enabled) {
 			if ($is_enabled) {
@@ -168,26 +160,21 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'output' => ['triggerid'],
 					'selectHosts' => ['hostid'],
 					'selectLastEvent' => ['acknowledged', 'suppressed'],
-					'hostids' => $all_host_ids, // Apenas para os hosts que já filtramos (incl. manutenção)
+					'hostids' => $all_host_ids, 
 					'filter' => [
-						'value' => TRIGGER_VALUE_TRUE, // Apenas disparadas
-						'priority' => $trigger_severities, // Apenas severidades selecionadas
-						'status' => TRIGGER_STATUS_ENABLED // Apenas triggers ativas
+						'value' => TRIGGER_VALUE_TRUE,
+						'priority' => $trigger_severities,
+						'status' => TRIGGER_STATUS_ENABLED
 					],
 					'monitored' => true,
 					'skipDependent' => true
 				];
 				
-				// Nota: Não precisamos filtrar manutenção aqui de novo, 
-				// pois já filtramos a lista de $all_host_ids acima.
-				
 				$triggers = \API::Trigger()->get($trigger_params);
 
 				foreach ($triggers as $trigger) {
-					// Verificação de segurança: Trigger tem host?
 					if (empty($trigger['hosts'])) continue;
 
-					// Validação de Evento (Ack/Suppressed)
 					$acknowledged = 0;
 					$suppressed = 0;
 					if (!empty($trigger['lastEvent'])) {
@@ -195,17 +182,14 @@ class WidgetView extends CControllerDashboardWidgetView {
 						$suppressed = (int)$trigger['lastEvent']['suppressed'];
 					}
 
-					// Filtros de Evento
 					if ($acknowledged == 1 && !$problem_filters['show_acknowledged']) {
-						continue; // Pula se está ack e não queremos ver ack
+						continue;
 					}
 					if ($suppressed == 1 && !$problem_filters['show_suppressed']) {
-						continue; // Pula se está sup e não queremos ver sup
+						continue;
 					}
 
-					// Se passou, marca o host como "com alarme"
 					foreach ($trigger['hosts'] as $host) {
-						// Só marca se o host estiver na nossa lista validada inicial
 						if (isset($all_hosts[$host['hostid']])) {
 							$hosts_with_alarms_map[$host['hostid']] = true;
 						}
@@ -216,7 +200,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		
 		$hosts_with_alarms_count = count($hosts_with_alarms_map);
 
-		// === PASSO 3: Retorno Final ===
+		// === PASSO 3: Retorno ===
 		$count = 0;
 		switch ($count_mode) {
 			case WidgetForm::COUNT_MODE_WITH_ALARMS:
