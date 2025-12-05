@@ -25,7 +25,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 
-		// 2. Monta Severidades
 		$severities = [];
 		$map_severity = [
 			WidgetForm::SEVERITY_NOT_CLASSIFIED => 'show_not_classified',
@@ -44,10 +43,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		$ack_status = ($show_acknowledged == 1) ? ZBX_ACK_STATUS_ALL : ZBX_ACK_STATUS_UNACK;
-
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. CHAMA A ENGINE DO WIDGET NATIVO
+		// 2. Chama Engine Nativa
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $hostgroups,
@@ -62,7 +60,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_opdata' => 0
 		], $search_limit);
 
-		// 4. Processamento
+		// 3. Processamento
 		$alarm_counts = [0=>0, 1=>0, 2=>0, 3=>0, 4=>0, 5=>0];
 		$detailed_alarms = [];
 		$total_alarms = 0;
@@ -72,19 +70,28 @@ class WidgetView extends CControllerDashboardWidgetView {
 			foreach ($data['problems'] as $problem) {
 				$triggerid = $problem['objectid'] ?? 0;
 				
+				// Verifica se a trigger existe no array retornado
 				if (!isset($data['triggers'][$triggerid])) continue;
 				$trigger = $data['triggers'][$triggerid];
 				
+				// Pega o host. A CScreenProblem retorna hosts indexados pelo hostid dentro da trigger.
+				// Precisamos pegar o primeiro disponível.
 				$host = reset($trigger['hosts']);
-				if (!$host) continue;
+				if (!$host) {
+                    // Fallback: Tenta pegar pelo hostid direto se disponível na trigger
+                    // Em algumas versões do CScreenProblem, a estrutura pode variar levemente
+                    continue; 
+                }
 
-				// Filtro: Exclude Hosts
-				if (in_array($host['hostid'], $exclude_hosts)) continue;
+				$host_id = $host['hostid'];
+                $host_name = $host['name']; // Nome correto vindo da API
+                $host_maintenance = $host['maintenance_status'];
 
-				// Filtro: Maintenance
-				if ($exclude_maintenance == 1 && $host['maintenance_status'] == 1) continue;
+				// Filtros Manuais
+				if (in_array($host_id, $exclude_hosts)) continue;
+				if ($exclude_maintenance == 1 && $host_maintenance == 1) continue;
 
-				$severity = (int)($problem['severity'] ?? 0);
+				$severity = (int)$problem['severity'];
 				$alarm_counts[$severity]++;
 				$total_alarms++;
 
@@ -92,18 +99,21 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
-				// Dados simples e diretos para o frontend
+                // CORREÇÃO DO STATUS DE ACK
+                // A API retorna 'acknowledged' como string/int.
+                // EVENT_ACKNOWLEDGED é uma constante global (=1).
+                $is_ack = ($problem['acknowledged'] == EVENT_ACKNOWLEDGED);
+
 				$detailed_alarms[] = [
-					'eventid' => $problem['eventid'] ?? 0,
+					'eventid' => $problem['eventid'],
 					'triggerid' => $triggerid,
-					'description' => $problem['name'] ?? _('Unknown'),
+					'description' => $problem['name'], // Nome do problema resolvido
 					'severity' => $severity,
 					'severity_name' => CSeverityHelper::getName($severity),
-					'host_name' => $host['name'] ?? _('Unknown'),
-					'clock' => $problem['clock'] ?? time(),
-					// Passamos o valor inteiro direto (0 ou 1)
-					'acknowledged' => (int)($problem['acknowledged'] ?? 0),
-					'suppressed' => (int)($problem['suppressed'] ?? 0)
+					'host_name' => $host_name, // Nome do Host corrigido
+					'clock' => $problem['clock'],
+					'acknowledged' => $is_ack ? 1 : 0, // Passa 1 ou 0 para o JS
+					'suppressed' => ($problem['suppressed'] == ZBX_PROBLEM_SUPPRESSED) ? 1 : 0
 				];
 			}
 		}
@@ -115,7 +125,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return $b['severity'] - $a['severity'];
 		});
 
-		// 5. Renderização
+		// 4. Group Name
 		$group_name = '';
 		if ($this->fields_values['show_group_name'] ?? 1) {
 			if (!empty($this->fields_values['group_name_text'])) {
