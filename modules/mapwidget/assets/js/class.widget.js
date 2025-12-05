@@ -1,7 +1,6 @@
 /*
 ** Zabbix
 ** Copyright (C) 2001-2023 Zabbix SIA
-** ... (GNU license header) ...
 */
 
 class WidgetMap extends CWidget {
@@ -16,7 +15,6 @@ class WidgetMap extends CWidget {
 		this._vars = {};
 		this._location_markers = new Map();
 		
-		// --- Lógica de Salvar Filtro ---
 		this._storage_key = 'mapwidget_filter_' + this.widget_id;
 		const saved_filter_state = localStorage.getItem(this._storage_key);
 		this._filter_only_problems = (saved_filter_state === 'true');
@@ -46,29 +44,23 @@ class WidgetMap extends CWidget {
 	}
 
 	setContents(response) {
-		// 1. Armazena os dados
-		this._vars.zabbix_hosts = response.zabbix_hosts; // Para os pins
+		this._vars.zabbix_hosts = response.zabbix_hosts; 
 		this._vars.severity_colors = response.severity_colors;
 		this._vars.severity_names = response.severity_names;
-		this._vars.detailed_problems = response.detailed_problems; // Para o modal
+		this._vars.detailed_problems = response.detailed_problems; 
 		
-		// Armazena os fields_values para o getUpdateRequestData E para a URL
 		if (response.fields_values) {
 			this._fields = response.fields_values;
 		}
 
-		// 2. Verificamos se o mapa já foi inicializado
 		if (!this._map) {
-			// É A PRIMEIRA CARGA:
 			super.setContents(response);
 			this.initializeMap();
 		}
 		else {
-			// É APENAS UM REFRESH:
 			console.log('Map refresh: Redrawing host pins...');
 			this.drawHostPins();
 			
-			// ATUALIZA O MODAL (se estiver aberto)
 			const problems_modal = this._target.querySelector('#map-problems-modal');
 			if (problems_modal && problems_modal.classList.contains('visible')) {
 				this._target.querySelector('.map-problems-modal-body').innerHTML = this.buildAllProblemsHtml();
@@ -82,20 +74,18 @@ class WidgetMap extends CWidget {
 			await this._maplibre_promise;
 			this._map_container = this._target.querySelector('.map-widget-container');
 			if (!this._map_container) {
-				this.showError('Map container element (.map-widget-container) not found inside widget body.');
+				this.showError('Map container element not found.');
 				return;
 			}
-			// --- CORREÇÃO: Lê this._fields (que foi populado por setContents) ---
 			if (!this._fields) {
-				this.showError('Widget data (fields_values) is missing. Cannot initialize map.');
+				this.showError('Widget data missing.');
 				return;
 			}
-			// --- FIM DA CORREÇÃO ---
 
 			const map_id = this._fields.map_id;
 			const map_key = this._fields.map_key;
 			if (!map_id || !map_key) {
-				this.showError('Map ID and Map Key must be configured in the widget settings.');
+				this.showError('Map ID and Map Key must be configured.');
 				return;
 			}
 			const mapUrl = `https://api.maptiler.com/maps/${map_id}/?key=${map_key}`;
@@ -119,7 +109,7 @@ class WidgetMap extends CWidget {
 			
 			this._map.on('load', () => {
 				this._target.classList.remove('is-loading');
-				console.log('Map loaded successfully. Drawing host pins...');
+				console.log('Map loaded.');
 				this.drawHostPins();
 				this.setupSearch(); 
 			});
@@ -134,13 +124,8 @@ class WidgetMap extends CWidget {
 		}
 	}
 
-	/**
-	 * Função principal (Labels + Regex)
-	 */
 	drawHostPins() {
-		if (!this._map) {
-			return;
-		}
+		if (!this._map) return;
 
 		this._location_markers.forEach(marker => marker.remove());
 		this._location_markers.clear();
@@ -154,9 +139,7 @@ class WidgetMap extends CWidget {
 		const locations = {};
 		hosts.forEach(host => {
 			const key = `${host.lat},${host.lon}`;
-			if (!locations[key]) {
-				locations[key] = [];
-			}
+			if (!locations[key]) locations[key] = [];
 			locations[key].push(host);
 		});
 
@@ -192,12 +175,7 @@ class WidgetMap extends CWidget {
 					label_text = `${host_count} Hosts`;
 				}
 			} else {
-				let source_string = '';
-				if (label_source === 2) {
-					source_string = first_host.group_name;
-				} else {
-					source_string = first_host.name;
-				}
+				let source_string = (label_source === 2) ? first_host.group_name : first_host.name;
 				if (!source_string) source_string = first_host.name;
 				label_text = this.applyRegex(source_string, label_regex);
 			}
@@ -230,13 +208,10 @@ class WidgetMap extends CWidget {
 	}
 
 	setupSearch() {
-		// ... (lógica da barra de pesquisa, está correta) ...
 		const search_input = this._target.querySelector('input[name="map_search_input"]');
 		const search_results = this._target.querySelector('.map-search-results');
-		if (!search_input || !search_results) {
-			console.error('MapWidget: Search input or results container not found.');
-			return;
-		}
+		if (!search_input || !search_results) return;
+
 		search_input.addEventListener('input', (e) => {
 			const search_term = e.target.value.toLowerCase();
 			search_results.innerHTML = ''; 
@@ -283,7 +258,6 @@ class WidgetMap extends CWidget {
 			}
 		});
 
-		// --- Lógica do Modal de "Show Problems" (está correta) ---
 		const show_problems_btn = this._target.querySelector('.map-show-problems-btn');
 		const problems_modal = this._target.querySelector('#map-problems-modal');
 		const problems_modal_close = this._target.querySelector('.map-problems-modal-close');
@@ -306,7 +280,6 @@ class WidgetMap extends CWidget {
 			});
 		}
 		
-		// --- Lógica do Filtro "Toggle Problems" (Salvar Estado) ---
 		const filter_btn = this._target.querySelector('.map-filter-problems-btn');
 		if (filter_btn) {
 			filter_btn.textContent = this._filter_only_problems ? 'Show All Hosts' : 'Show Only Problems';
@@ -322,56 +295,40 @@ class WidgetMap extends CWidget {
 		}
 	}
 	
-	// --- MUDANÇA AQUI: buildUrlWithFilters ---
-	/**
-	 * Constrói a URL da tela de 'Problems' com todos os filtros do widget.
-	 */
+	// --- MUDANÇA: Usando o novo campo 'severities' ---
 	buildUrlWithFilters() {
 		const url = new URL('zabbix.php', window.location.origin);
 		url.searchParams.set('action', 'problem.view');
 		url.searchParams.set('filter_set', '1');
 
-		// 1. Adiciona Severidades
-		const severities_map = {
-			'show_not_classified': 0,
-			'show_information': 1,
-			'show_warning': 2,
-			'show_average': 3,
-			'show_high': 4,
-			'show_disaster': 5
-		};
-		let all_severities_checked = true;
-		for (const key of Object.keys(severities_map)) {
-			if (this._fields[key] == 0 || this._fields[key] == false) {
-				all_severities_checked = false;
-				break;
-			}
-		}
-		if (!all_severities_checked) {
-			for (const [key, severity_id] of Object.entries(severities_map)) {
-				if (this._fields[key] == 1 || this._fields[key] == true) { 
-					url.searchParams.append(`severities[${severity_id}]`, severity_id); 
-				}
-			}
+		// 1. Severidades
+		// O campo 'severities' agora é um array de inteiros (ex: [2, 4, 5])
+		const selected_severities = this._fields.severities || [];
+		
+		// O filtro do problem.view espera severities[ID]=ID
+		if (selected_severities.length > 0 && selected_severities.length < 6) {
+			// Se não estiverem todos marcados (Zabbix assume 'todos' se nenhum for enviado, ou todos)
+			// Mas para ser preciso:
+			selected_severities.forEach(sev_id => {
+				url.searchParams.append(`severities[${sev_id}]`, sev_id);
+			});
 		}
 
-		// 2. Adiciona Filtros de Ack
-		// No form: 1 = Show, 0 = Hide. Na URL: 1 = Unacked, 0 = All.
+		// 2. Ack
 		if (this._fields.show_acknowledged == 0) {
-			url.searchParams.set('acknowledgement_status', '1'); // Show Unacknowledged
+			url.searchParams.set('acknowledgement_status', '1'); 
 		} else {
-			url.searchParams.set('acknowledgement_status', '0'); // Show All
+			url.searchParams.set('acknowledgement_status', '0'); 
 		}
 
-		// 3. Adiciona Filtros de Suppressed
-		// No form: 1 = Show, 0 = Hide.
+		// 3. Suppressed
 		if (this._fields.show_suppressed == 1) {
 			url.searchParams.set('show_suppressed', '1');
 		} else {
 			url.searchParams.set('show_suppressed', '0');
 		}
 
-		// 4. Adiciona Tags
+		// 4. Tags
 		const tags = this._fields.tags || [];
 		if (tags.length > 0) {
 			tags.forEach((tag, index) => {
@@ -382,32 +339,20 @@ class WidgetMap extends CWidget {
 			url.searchParams.set('evaltype', this._fields.evaltype);
 		}
 
-		// NOTA: 'exclude_maintenance' não é um filtro da tela de Problems,
-		// então não o adicionamos à URL.
-
 		return url;
 	}
 	// --- FIM DA MUDANÇA ---
 
-
-	/**
-	 * Constrói o HTML para o popup
-	 * LÓGICA MODIFICADA para usar a nova URL
-	 */
 	buildPopupHtml(host_group) {
 		const colors = this._vars.severity_colors || {};
-		
 		const host_count = host_group.length;
 		let title = '';
 		let view_all_html = '';
 		
 		if (host_count > 1) {
 			title = `${host_count} Hosts`;
-			
-			// --- MUDANÇA: 'View All' usa a URL com filtros ---
 			const view_all_url = this.buildUrlWithFilters();
 			host_group.forEach(h => view_all_url.searchParams.append('hostids[]', h.hostid));
-			// --- FIM DA MUDANÇA ---
 
 			view_all_html = `
 				<div class="map-popup-footer">
@@ -420,11 +365,8 @@ class WidgetMap extends CWidget {
 
 		let hosts_html = '';
 		host_group.forEach(host => {
-			
-			// --- MUDANÇA: 'View' usa a URL com filtros ---
 			const host_url = this.buildUrlWithFilters();
 			host_url.searchParams.append('hostids[]', host.hostid);
-			// --- FIM DA MUDANÇA ---
 
 			hosts_html += `
 				<div class="map-popup-host-item">
@@ -484,12 +426,10 @@ class WidgetMap extends CWidget {
 						}
 					});
 				}
-				
 				hosts_html += '</ul>';
 			} else {
 				hosts_html += `<div class="host-status-ok" style="color: ${colors[-1]};">Status: OK</div>`;
 			}
-			
 			hosts_html += '</div>';
 		});
 
@@ -504,10 +444,6 @@ class WidgetMap extends CWidget {
 		`;
 	}
 
-
-	/**
-	 * Constrói o HTML para o modal "All Problems" (Tabela)
-	 */
 	buildAllProblemsHtml() {
 		const problems = this._vars.detailed_problems || [];
 		const colors = this._vars.severity_colors || {};
@@ -574,9 +510,6 @@ class WidgetMap extends CWidget {
 		return html;
 	}
 
-	/**
-	 * Funções Utilitárias (helpers)
-	 */
 	applyRegex(source_string, label_regex) {
 		if (!source_string) return '';
 		if (label_regex) {
@@ -661,11 +594,7 @@ class WidgetMap extends CWidget {
 		return false;
 	}
 
-	/**
-	 * Envia os campos do formulário para o backend a cada refresh.
-	 */
 	getUpdateRequestData() {
-		// Pega todos os campos que o backend (WidgetView.php) precisa ler
 		return {
 			...super.getUpdateRequestData(),
 			map_id: this._fields.map_id,
@@ -682,21 +611,16 @@ class WidgetMap extends CWidget {
 			tags: this._fields.tags || [],
 			label_regex: this._fields.label_regex,
 			label_source: this._fields.label_source,
-			show_not_classified: this._fields.show_not_classified,
-			show_information: this._fields.show_information,
-			show_warning: this._fields.show_warning,
-			show_average: this._fields.show_average,
-			show_high: this._fields.show_high,
-			show_disaster: this._fields.show_disaster,
+			
+			// --- MUDANÇA: Envia o array de severities e novos campos ---
+			severities: this._fields.severities || [], // Array
 			show_acknowledged: this._fields.show_acknowledged,
 			show_suppressed: this._fields.show_suppressed,
-			exclude_maintenance: this._fields.exclude_maintenance // <-- Novo campo
+			exclude_maintenance: this._fields.exclude_maintenance
+			// ----------------------------------------------------------
 		};
 	}
 
-	/**
-	 * Define o intervalo de refresh (padrão é 30s se não definido no form)
-	 */
 	getRefreshInterval() {
 		return this._fields.refresh_interval || 30;
 	}
