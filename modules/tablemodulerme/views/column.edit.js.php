@@ -1,9 +1,3 @@
-<?php declare(strict_types = 0);
-
-
-use Modules\TableModuleRME\Includes\CWidgetFieldColumnsList;
-
-?>
 
 window.tablemodulerme_column_edit_form = new class {
 
@@ -110,7 +104,7 @@ window.tablemodulerme_column_edit_form = new class {
 			.on('afterremove.dynamicRows', () => this.#updateForm());
 
 		// Initialize Advanced configuration collapsible.
-		const collapsible = this.#form.querySelector(`fieldset.<?= ZBX_STYLE_COLLAPSIBLE ?>`);
+		const collapsible = this.#form.querySelector(`fieldset.collapsible`);
 		new CFormFieldsetCollapsible(collapsible);
 
 		// Field trimming.
@@ -162,7 +156,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Display.
-		const display_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const display_show = display_value_as == 1;
 		for (const element of this.#form.querySelectorAll('.js-display-row')) {
 			element.style.display = display_show ? '' : 'none';
 
@@ -172,8 +166,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Sparkline.
-		const sparkline_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>
-			&& display == <?= CWidgetFieldColumnsList::DISPLAY_SPARKLINE ?>;
+		const sparkline_show = display_value_as == 1			&& display == 6;
 
 		for (const element of this.#form.querySelectorAll('.js-sparkline-row')) {
 			element.style.display = sparkline_show ? '' : 'none';
@@ -186,9 +179,9 @@ window.tablemodulerme_column_edit_form = new class {
 		this.#form.fields['sparkline[time_period]'].disabled = !sparkline_show;
 
 		// Min/Max.
-		const min_max_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>  && [
-			'<?= CWidgetFieldColumnsList::DISPLAY_BAR ?>',
-			'<?= CWidgetFieldColumnsList::DISPLAY_INDICATORS ?>'
+		const min_max_show = display_value_as == 1  && [
+			'2',
+			'3'
 		].includes(display);
 		for (const element of this.#form.querySelectorAll('.js-min-max-row')) {
 			element.style.display = min_max_show ? '' : 'none';
@@ -199,7 +192,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Highlights.
-		const highlights_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_TEXT ?>;
+		const highlights_show = display_value_as == 2;
 		for (const element of this.#form.querySelectorAll('.js-highlights-row')) {
 			element.style.display = highlights_show ? '' : 'none';
 
@@ -209,9 +202,9 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// URL display options.
-		const display_url = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_URL ?>;
-		const url_override_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_URL ?> &&
-			url_display_mode == <?= CWidgetFieldColumnsList::URL_DISPLAY_CUSTOM ?>;
+		const display_url = display_value_as == 100;
+		const url_override_show = display_value_as == 100 &&
+			url_display_mode == 2;
 
 		for (const element of this.#form.querySelectorAll('.js-url-display-mode')) {
 			element.style.display = display_url ? '' : 'none';
@@ -246,7 +239,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Thresholds.
-		const thresholds_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const thresholds_show = display_value_as == 1;
 		for (const element of this.#form.querySelectorAll('.js-thresholds-row')) {
 			element.style.display = thresholds_show ? '' : 'none';
 
@@ -256,7 +249,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Decimal places.
-		const decimals_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const decimals_show = display_value_as == 1;
 		for (const element of this.#form.querySelectorAll('.js-decimals-row')) {
 			element.style.display = decimals_show ? '' : 'none';
 
@@ -272,25 +265,25 @@ window.tablemodulerme_column_edit_form = new class {
 
 		// Aggregation function.
 		const aggregation_function_select = this.#form.querySelector('z-select[name=aggregate_function]');
-		[<?= AGGREGATE_MIN ?>, <?= AGGREGATE_MAX ?>, <?= AGGREGATE_AVG ?>, <?= AGGREGATE_SUM ?>].forEach(option => {
+		[1, 2, 3, 5].forEach(option => {
 			aggregation_function_select.getOptionByValue(option).disabled =
-				display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+				display_value_as != 1;
 			aggregation_function_select.getOptionByValue(option).hidden =
-				display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+				display_value_as != 1;
 
 			if (aggregation_function_select.value == option
-					&& display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>) {
-				aggregation_function_select.value = <?= AGGREGATE_NONE ?>;
+					&& display_value_as != 1) {
+				aggregation_function_select.value = 0;
 			}
 		});
 
 		// Time period.
-		const time_period_show = parseInt(document.getElementById('aggregate_function').value) != <?= AGGREGATE_NONE ?>;
+		const time_period_show = parseInt(document.getElementById('aggregate_function').value) != 0;
 		this.#form.fields.time_period.disabled = !time_period_show;
 		this.#form.fields.time_period.hidden = !time_period_show;
 
 		// History data.
-		const history_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const history_show = display_value_as == 1;
 		for (const element of this.#form.querySelectorAll('.js-history-row')) {
 			element.style.display = history_show ? '' : 'none';
 
@@ -375,7 +368,7 @@ window.tablemodulerme_column_edit_form = new class {
 					messages = exception.error.messages;
 				}
 				else {
-					messages = [<?= json_encode(_('Unexpected server error.')) ?>];
+					messages = ["Unexpected server error."];
 				}
 
 				const message_box = makeMessageBox('bad', messages, title)[0];
