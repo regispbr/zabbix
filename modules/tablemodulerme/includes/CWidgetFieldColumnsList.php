@@ -7,7 +7,7 @@ use CWidgetsData;
 use DB;
 use Zabbix\Widgets\CWidgetField;
 use Zabbix\Widgets\Fields\CWidgetFieldTimePeriod;
-use Zabbix\Widgets\Fields\CWidgetFieldSparkline;
+use Modules\TableModuleRME\Includes\CWidgetFieldSparkline;
 
 class CWidgetFieldColumnsList extends CWidgetField {
 
