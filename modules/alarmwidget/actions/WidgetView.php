@@ -1,4 +1,9 @@
 <?php declare(strict_types = 0);
+/*
+** Zabbix
+** Copyright (C) 2001-2025 Zabbix SIA
+** ... (Licença) ...
+**/
 
 namespace Modules\AlarmWidget\Actions;
 
@@ -12,16 +17,12 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// --- CONFIGURAÇÃO DE DEBUG ---
-		$debug_log = [];
-		$debug_log[] = "--- INÍCIO DO DEBUG ---";
-
 		// Constantes de fallback
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
-		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
+		if (!defined('TRIGGERS_OPTION_IN_PROBLEM')) define('TRIGGERS_OPTION_IN_PROBLEM', 2);
 
 		// 1. Coleta de Filtros
 		$groupids = $this->fields_values['groupids'] ?? [];
@@ -36,25 +37,25 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
-		
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
-		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
-		
-		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
-
-		$debug_log[] = "Filtros: Suppressed checkbox: $show_suppressed | Only Suppressed checkbox: $show_suppressed_only";
-		$debug_log[] = "Engine Show Suppressed (Calculado): " . ($engine_show_suppressed ? 'TRUE' : 'FALSE');
-		$debug_log[] = "Exclude Maintenance: $exclude_maintenance";
-
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
-		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time']; // Simplificado para debug
+		// Configuração de Colunas
+		$show_columns = [];
+		if (!empty($this->fields_values['show_column_host'])) $show_columns[] = 'host';
+		if (!empty($this->fields_values['show_column_severity'])) $show_columns[] = 'severity';
+		if (!empty($this->fields_values['show_column_status'])) $show_columns[] = 'status';
+		if (!empty($this->fields_values['show_column_problem'])) $show_columns[] = 'problem';
+		if (!empty($this->fields_values['show_column_operational_data'])) $show_columns[] = 'operational_data';
+		if (!empty($this->fields_values['show_column_ack'])) $show_columns[] = 'ack';
+		if (!empty($this->fields_values['show_column_age'])) $show_columns[] = 'age';
+		if (!empty($this->fields_values['show_column_time'])) $show_columns[] = 'time';
+		if (empty($show_columns)) {
+			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
+		}
 
-		// 2. Mapeamento
+		// 2. Mapeamento de Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
-		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-			$show_mode = TRIGGERS_OPTION_ALL; 
-		} 
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -62,7 +63,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. Engine Nativa
+		// 3. Chamada à Engine Nativa
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -72,15 +73,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'evaltype' => $evaltype,
 			'tags' => $tags,
 			'show_symptoms' => false,
-			'show_suppressed' => $engine_show_suppressed,
+			'show_suppressed' => ($show_suppressed == 1),
 			'acknowledgement_status' => $ack_status,
 			'show_opdata' => 0
 		], $search_limit);
 
-		$raw_count = count($data['problems']);
-		$debug_log[] = "CScreenProblem retornou: $raw_count problemas.";
-
-		// 4. Hidratação
+		// 4. Hidratação Robusta (API de Trigger)
 		$triggerIds = [];
 		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
@@ -109,79 +107,48 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
+
+				// --- CORREÇÃO AQUI: Capturando Ack E Suppressed ---
+				$ack_status_trigger = 0;
+				$sup_status_trigger = 0;
+				if (!empty($trig['lastEvent'])) {
+					$ack_status_trigger = (int)($trig['lastEvent']['acknowledged'] ?? 0);
+					$sup_status_trigger = (int)($trig['lastEvent']['suppressed'] ?? 0);
+				}
+
 				$opdata = $trig['opdata'] ?? '';
-				$trigger_info_map[$tid] = ['host' => $host_data, 'opdata' => $opdata];
+
+				$trigger_info_map[$tid] = [
+					'host' => $host_data,
+					'ack' => $ack_status_trigger,
+					'sup' => $sup_status_trigger, // Armazena o suppressed
+					'opdata' => $opdata
+				];
 			}
 		}
 
-		// 5. Construção e LOG DE DESCARTES
+		// 5. Construção do Array Final
 		$problems_final = [];
-		$discard_stats = ['missing_trigger' => 0, 'exclude_host' => 0, 'maintenance' => 0, 'not_suppressed' => 0, 'status_mismatch' => 0, 'accepted' => 0];
 
 		if (!empty($data['problems'])) {
-			foreach ($data['problems'] as $index => $problem) {
+			foreach ($data['problems'] as $problem) {
 				$triggerid = $problem['objectid'] ?? 0;
 				
-				if (!isset($trigger_info_map[$triggerid])) {
-					$discard_stats['missing_trigger']++;
-					continue;
-				}
+				if (!isset($trigger_info_map[$triggerid])) continue;
 
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
-				// Filtro 1: Exclude Hosts
-				if (in_array($host_info['id'], $exclude_hostids)) {
-					$discard_stats['exclude_host']++;
-					continue;
-				}
+				// Filtros Manuais
+				if (in_array($host_info['id'], $exclude_hostids)) continue;
+				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// Filtro 2: Maintenance
-				// IMPORTANTE: Se o host está em manutenção E você marcou "Exclude maintenance",
-				// ele vai ser descartado AQUI, mesmo que seja suprimido.
-				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) {
-					// Log apenas dos primeiros 3 casos para não poluir
-					if ($discard_stats['maintenance'] < 3) {
-						$debug_log[] = "Descartado por MANUTENÇÃO: Host={$host_info['name']} (Maint={$host_info['maintenance']})";
-					}
-					$discard_stats['maintenance']++;
-					continue;
-				}
-
-				// Dados do Problema
+				// Dados seguros
 				$r_eventid = $problem['r_eventid'] ?? 0;
-				$p_sup = (int)($problem['suppressed'] ?? 0);
-
-				// Log do primeiro problema para ver a estrutura
-				if ($index === 0) {
-					$debug_log[] = "Exemplo de Problema #1: Name={$problem['name']}, Suppressed=$p_sup";
-				}
-
-				// Filtro 3: Only Suppressed
-				if ($show_suppressed_only == 1) {
-					if ($p_sup == 0) {
-						$discard_stats['not_suppressed']++;
-						continue; 
-					} else {
-						// É suprimido!
-						$debug_log[] = "Encontrado SUPRIMIDO: {$problem['name']} (Host: {$host_info['name']})";
-					}
-				}
-
-				// Filtro 4: Status
-				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-					if ($r_eventid == 0) { $discard_stats['status_mismatch']++; continue; }
-				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
-					if ($r_eventid != 0) { $discard_stats['status_mismatch']++; continue; }
-				}
-
-				// Aceito
-				$discard_stats['accepted']++;
-				
 				$clock = $problem['clock'] ?? time();
 				$severity = (int)($problem['severity'] ?? 0);
 				$name = $problem['name'] ?? _('Unknown problem');
-				$p_ack = (int)($problem['acknowledged'] ?? 0);
+
 				$age_seconds = time() - $clock;
 				
 				$problems_final[] = [
@@ -196,16 +163,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
-					'ack_count' => $p_ack,
-					'suppressed' => $p_sup, 
+					
+					'ack_count' => $info['ack'],
+					'suppressed' => $info['sup'], // --- PASSANDO PARA O FRONTEND ---
 					'operational_data' => $info['opdata']
 				];
 			}
 		}
 
-		$debug_log[] = "Estatísticas de Descarte: " . json_encode($discard_stats);
-
-		// Ordenação
+		// 6. Ordenação
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
@@ -237,7 +203,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_columns' => $show_columns,
 			'refresh_interval' => $this->fields_values['refresh_interval'] ?? 60,
 			'fields_values' => $this->fields_values,
-			'debug_log' => $debug_log, // Enviando log para o frontend
 			'user' => [
 				'debug_mode' => $this->getDebugMode()
 			]
