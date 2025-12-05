@@ -20,33 +20,27 @@
 
 namespace Modules\HostGroupAlarms\Actions;
 
-use CControllerDashboardWidgetView,
-	CControllerResponseData;
+use API;
+use CControllerDashboardWidgetView;
+use CControllerResponseData;
 use Modules\HostGroupAlarms\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// Get selected host groups
+		// 1. Coletar filtros do formulário
 		$hostgroups = $this->fields_values['hostgroups'] ?? [];
 		$hosts = $this->fields_values['hosts'] ?? [];
-		
 		$exclude_hosts = $this->fields_values['exclude_hosts'] ?? [];
 		
-		// CRITICAL: Convert checkbox values to integers for proper comparison
 		$show_acknowledged = (int)($this->fields_values['show_acknowledged'] ?? 1);
 		$show_suppressed = (int)($this->fields_values['show_suppressed'] ?? 0);
 		$exclude_maintenance = (int)($this->fields_values['exclude_maintenance'] ?? 0);
 		
-		$problem_filters = [
-			'evaltype' => $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR,
-			'tags' => $this->fields_values['tags'] ?? [],
-			'show_acknowledged' => $show_acknowledged,
-			'show_suppressed' => $show_suppressed,
-			'exclude_maintenance' => $exclude_maintenance
-		];
+		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
+		$tags = $this->fields_values['tags'] ?? [];
 
-		// Severity filters
+		// Mapeamento de severidades habilitadas no widget
 		$severity_filters = [
 			WidgetForm::SEVERITY_NOT_CLASSIFIED => $this->fields_values['show_not_classified'] ?? 1,
 			WidgetForm::SEVERITY_INFORMATION => $this->fields_values['show_information'] ?? 1,
@@ -56,17 +50,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 			WidgetForm::SEVERITY_DISASTER => $this->fields_values['show_disaster'] ?? 1
 		];
 
-		// Get alarm counts, highest severity, and detailed alarm data
-		$alarm_data = $this->getAlarmData($hostgroups, $hosts, $exclude_hosts, $severity_filters, $problem_filters);
-
-		// Get group name
+		// 2. Definir o nome do grupo (Visual)
 		$group_name = '';
 		if ($this->fields_values['show_group_name'] ?? 1) {
 			if (!empty($this->fields_values['group_name_text'])) {
 				$group_name = $this->fields_values['group_name_text'];
 			} elseif (!empty($hostgroups)) {
-				// Get first group name
-				$group_names = \API::HostGroup()->get([
+				$group_names = API::HostGroup()->get([
 					'output' => ['name'],
 					'groupids' => array_slice($hostgroups, 0, 1)
 				]);
@@ -74,7 +64,20 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// Prepare widget data
+		// 3. Buscar Dados Reais (Refatorado para usar API::Problem)
+		$alarm_data = $this->getProblemData(
+			$hostgroups, 
+			$hosts, 
+			$exclude_hosts, 
+			$severity_filters, 
+			$show_acknowledged, 
+			$show_suppressed, 
+			$exclude_maintenance,
+			$evaltype,
+			$tags
+		);
+
+		// 4. Preparar resposta
 		$data = [
 			'name' => $this->getInput('name', $this->widget->getName()),
 			'group_name' => $group_name,
@@ -105,7 +108,21 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$this->setResponse(new CControllerResponseData($data));
 	}
 
-	private function getAlarmData(array $hostgroups, array $hosts, array $exclude_hosts, array $severity_filters, array $problem_filters): array {
+	/**
+	 * Busca problemas usando API::Problem para garantir paridade com o frontend nativo.
+	 */
+	private function getProblemData(
+		array $hostgroups, 
+		array $hosts, 
+		array $exclude_hosts, 
+		array $severity_filters, 
+		int $show_acknowledged,
+		int $show_suppressed,
+		int $exclude_maintenance,
+		int $evaltype,
+		array $tags
+	): array {
+		
 		$alarm_counts = [
 			WidgetForm::SEVERITY_NOT_CLASSIFIED => 0,
 			WidgetForm::SEVERITY_INFORMATION => 0,
@@ -114,93 +131,93 @@ class WidgetView extends CControllerDashboardWidgetView {
 			WidgetForm::SEVERITY_HIGH => 0,
 			WidgetForm::SEVERITY_DISASTER => 0
 		];
-
 		$detailed_alarms = [];
-
-		if (empty($hostgroups) && empty($hosts)) {
-			return [
-				'counts' => $alarm_counts,
-				'total' => 0,
-				'highest_severity' => -1,
-				'detailed_alarms' => $detailed_alarms
-			];
-		}
-
-		// Build host filter
-		$host_filter = [];
-		if (!empty($hosts)) {
-			$host_filter['hostids'] = $hosts;
-		} elseif (!empty($hostgroups)) {
-			$host_filter['groupids'] = $hostgroups;
-		}
-
-		if (!empty($exclude_hosts) && !empty($host_filter['hostids'])) {
-			$host_filter['hostids'] = array_diff($host_filter['hostids'], $exclude_hosts);
-		}
-
-		// Get triggers with problems
-		$params = [
-			'output' => ['triggerid', 'priority', 'description', 'lastchange'],
-			'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-			'selectLastEvent' => ['eventid', 'clock', 'acknowledged', 'r_eventid', 'suppressed'],
-			'filter' => ['value' => TRIGGER_VALUE_TRUE],
-			'monitored' => true,
-			'skipDependent' => true,
-			'preservekeys' => true,
-			'sortfield' => ['priority', 'lastchange'],
-			'sortorder' => ['DESC', 'DESC'],
-			'evaltype' => $problem_filters['evaltype'],
-			'tags' => $problem_filters['tags']
-		] + $host_filter;
-
-		// Add maintenance filter if needed
-		if ($problem_filters['exclude_maintenance'] == 1) {
-			$params['maintenance'] = false;
-		}
-
-		$triggers = \API::Trigger()->get($params);
-
-		// Filter out excluded hosts when using groupids
-		if (!empty($exclude_hosts) && !empty($host_filter['groupids'])) {
-			$triggers = array_filter($triggers, function ($trigger) use ($exclude_hosts) {
-				foreach ($trigger['hosts'] as $host) {
-					if (in_array($host['hostid'], $exclude_hosts)) {
-						return false;
-					}
-				}
-				return true;
-			});
-		}
-
 		$total_alarms = 0;
 		$highest_severity = -1;
 
-		foreach ($triggers as $trigger) {
-			$severity = (int)$trigger['priority'];
+		if (empty($hostgroups) && empty($hosts)) {
+			return $this->buildEmptyResult($alarm_counts);
+		}
 
-			// Get acknowledged and suppressed status from lastEvent
-			$acknowledged = 0;
-			$suppressed = 0;
-			
-			if (!empty($trigger['lastEvent'])) {
-				$acknowledged = (int)($trigger['lastEvent']['acknowledged'] ?? 0);
-				$suppressed = (int)($trigger['lastEvent']['suppressed'] ?? 0);
-			}
+		// === PASSO 1: Resolver Hosts (para filtro de Manutenção e Exclusão) ===
+		// Precisamos dos IDs dos hosts para passar ao API::Problem e garantir filtros corretos
+		$host_options = [
+			'output' => ['hostid', 'name', 'maintenance_status'],
+			'preservekeys' => true
+		];
+		
+		if (!empty($groupids)) $host_options['groupids'] = $hostgroups;
+		if (!empty($hosts)) $host_options['hostids'] = $hosts;
 
-			// CRITICAL FIX: Apply acknowledged filter
-			// If show_acknowledged = 0 (unchecked), hide acknowledged problems
-			if ($problem_filters['show_acknowledged'] == 0 && $acknowledged == 1) {
-				continue;
-			}
+		$hosts_data = API::Host()->get($host_options);
 
-			// CRITICAL FIX: Apply suppressed filter  
-			// If show_suppressed = 0 (unchecked), hide suppressed problems
-			if ($problem_filters['show_suppressed'] == 0 && $suppressed == 1) {
-				continue;
-			}
+		// Filtra Manutenção
+		if ($exclude_maintenance == 1) {
+			$hosts_data = array_filter($hosts_data, function($host) {
+				return $host['maintenance_status'] == HOST_MAINTENANCE_STATUS_OFF;
+			});
+		}
 
-			// Check if this severity should be counted
-			if (!empty($severity_filters[$severity])) {
+		// Filtra Exclusões Manuais
+		if (!empty($exclude_hosts)) {
+			$hosts_data = array_diff_key($hosts_data, array_flip($exclude_hosts));
+		}
+
+		$valid_hostids = array_keys($hosts_data);
+
+		if (empty($valid_hostids)) {
+			return $this->buildEmptyResult($alarm_counts);
+		}
+
+		// === PASSO 2: Buscar Problemas (A Correção Principal) ===
+		$problem_options = [
+			'output' => ['eventid', 'objectid', 'severity', 'name', 'clock', 'acknowledged', 'suppressed'],
+			'hostids' => $valid_hostids,
+			'selectAcknowledges' => ['action'], // Necessário para saber se foi ack
+			'source' => EVENT_SOURCE_TRIGGERS,
+			'object' => EVENT_OBJECT_TRIGGER,
+			'recent' => true, // Importante para "Recent problems" vs "History"
+			'sortfield' => ['eventid'],
+			'sortorder' => 'DESC'
+		];
+
+		// Filtro de Severidade (Passamos apenas as marcadas para otimizar)
+		$severities_to_get = [];
+		foreach ($severity_filters as $sev => $active) {
+			if ($active) $severities_to_get[] = $sev;
+		}
+		if (empty($severities_to_get)) {
+			return $this->buildEmptyResult($alarm_counts);
+		}
+		$problem_options['severities'] = $severities_to_get;
+
+		// Filtro de Tags
+		if (!empty($tags)) {
+			$problem_options['evaltype'] = $evaltype;
+			$problem_options['tags'] = $tags;
+		}
+
+		// Filtro Acknowledged
+		// Se show_acknowledged == 0 (apenas não reconhecidos)
+		// Se show_acknowledged == 1 (mostrar todos - padrão do widget original era checkbox)
+		if ($show_acknowledged == 0) {
+			$problem_options['acknowledged'] = false;
+		}
+
+		// Filtro Suppressed
+		// Se show_suppressed == 0, ocultar suprimidos. Se 1, mostrar (ou ambos).
+		if ($show_suppressed == 0) {
+			$problem_options['suppressed'] = false;
+		}
+
+		$problems = API::Problem()->get($problem_options);
+
+		// === PASSO 3: Processar Resultados ===
+		foreach ($problems as $problem) {
+			$severity = (int)$problem['severity'];
+
+			// Incrementa contadores
+			if (isset($alarm_counts[$severity])) {
 				$alarm_counts[$severity]++;
 				$total_alarms++;
 				
@@ -208,34 +225,59 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
+				// Prepara dados detalhados para o Tooltip
+				// Nota: API::Problem não retorna Host Name direto, pegamos do cache de hosts
+				// Para pegar o host exato do problema, precisaríamos de selectHosts, 
+				// mas como já temos $hosts_data filtrado, podemos tentar cruzar ou fazer um get extra se for crítico.
+				// Para performance, no tooltip, vamos assumir que o usuário quer ver o problema.
+				// Se precisar do nome do host exato no tooltip, descomente o selectHosts no API::Problem
+				
 				$detailed_alarms[] = [
-					'triggerid' => $trigger['triggerid'],
-					'description' => $trigger['description'],
+					'triggerid' => $problem['objectid'], // Em problemas de trigger, objectid é o triggerid
+					'eventid' => $problem['eventid'],
+					'description' => $problem['name'],
 					'severity' => $severity,
 					'severity_name' => $this->getSeverityName($severity),
-					'host_name' => !empty($trigger['hosts']) ? $trigger['hosts'][0]['name'] : 'Unknown',
-					'lastchange' => $trigger['lastchange'],
-					'clock' => !empty($trigger['lastEvent']) ? $trigger['lastEvent']['clock'] : $trigger['lastchange'],
-					'acknowledged' => $acknowledged,
-					'suppressed' => $suppressed,
-					'eventid' => !empty($trigger['lastEvent']) ? $trigger['lastEvent']['eventid'] : null
+					'host_name' => 'Host', // Simplificação para evitar N+1 queries. O ideal é adicionar selectHosts no get.
+					'clock' => $problem['clock'],
+					'acknowledged' => (int)$problem['acknowledged'],
+					'suppressed' => (int)$problem['suppressed']
 				];
 			}
 		}
 
-		// Sort detailed alarms
-		usort($detailed_alarms, function($a, $b) {
-			if ($a['severity'] === $b['severity']) {
-				return $b['clock'] - $a['clock'];
+		// Para o nome do host no tooltip ficar correto, faremos um fetch em lote rápido
+		if (!empty($detailed_alarms)) {
+			// Coletamos os triggerids
+			$triggerids = array_column($detailed_alarms, 'triggerid');
+			$triggers = API::Trigger()->get([
+				'output' => ['triggerid'],
+				'selectHosts' => ['name'],
+				'triggerids' => $triggerids,
+				'preservekeys' => true
+			]);
+			
+			foreach ($detailed_alarms as &$alarm) {
+				if (isset($triggers[$alarm['triggerid']]['hosts'][0])) {
+					$alarm['host_name'] = $triggers[$alarm['triggerid']]['hosts'][0]['name'];
+				}
 			}
-			return $b['severity'] - $a['severity'];
-		});
+		}
 
 		return [
 			'counts' => $alarm_counts,
 			'total' => $total_alarms,
 			'highest_severity' => $highest_severity,
 			'detailed_alarms' => $detailed_alarms
+		];
+	}
+
+	private function buildEmptyResult($alarm_counts): array {
+		return [
+			'counts' => $alarm_counts,
+			'total' => 0,
+			'highest_severity' => -1,
+			'detailed_alarms' => []
 		];
 	}
 
@@ -277,3 +319,4 @@ class WidgetView extends CControllerDashboardWidgetView {
 		return in_array($severity, $light_backgrounds) ? '#000000' : '#FFFFFF';
 	}
 }
+
