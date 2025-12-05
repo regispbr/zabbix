@@ -22,7 +22,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
-		if (!defined('TRIGGERS_OPTION_IN_PROBLEM')) define('TRIGGERS_OPTION_IN_PROBLEM', 2); // Caso use status 'Problem'
+		if (!defined('TRIGGERS_OPTION_IN_PROBLEM')) define('TRIGGERS_OPTION_IN_PROBLEM', 2);
 
 		// 1. Coleta de Filtros
 		$groupids = $this->fields_values['groupids'] ?? [];
@@ -40,7 +40,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
-		// Configuração de Colunas (Visual)
+		// Configuração de Colunas
 		$show_columns = [];
 		if (!empty($this->fields_values['show_column_host'])) $show_columns[] = 'host';
 		if (!empty($this->fields_values['show_column_severity'])) $show_columns[] = 'severity';
@@ -54,25 +54,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 		}
 
-		// 2. Mapeamento de Filtros para Engine Nativa (CScreenProblem)
-		
-		// Status do Problema (Recente vs Histórico vs Apenas Problema)
-		// O widget nativo usa TRIGGERS_OPTION_RECENT_PROBLEM por padrão
+		// 2. Mapeamento de Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
-		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-			// Se quer resolvidos, normalmente é histórico, mas a engine nativa trata diferente.
-			// Vamos manter Recent Problem e filtrar depois se necessário, ou usar 'All' (History).
-			// Para simplificar e bater com o nativo, vamos usar Recent Problem.
-		}
 
-		// Status de Ack
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
-		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK; // Se tiver essa constante customizada
+		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK;
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. Chamada à Engine Nativa (Encontra os problemas)
+		// 3. Chamada à Engine Nativa
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -84,7 +75,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => ($show_suppressed == 1),
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 // Buscaremos opdata depois se precisar
+			'show_opdata' => 0
 		], $search_limit);
 
 		// 4. Hidratação Robusta (API de Trigger)
@@ -99,15 +90,14 @@ class WidgetView extends CControllerDashboardWidgetView {
 		if (!empty($triggerIds)) {
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => ['triggerid', 'opdata'], // Inclui opdata
+				'output' => ['triggerid', 'opdata'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
 				'selectLastEvent' => ['acknowledged', 'suppressed'],
 				'preservekeys' => true,
-				'expandData' => true // Expande macros no opdata
+				'expandData' => true
 			]);
 
 			foreach ($db_triggers as $tid => $trig) {
-				// Host
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
 					$first_host = reset($trig['hosts']);
@@ -118,13 +108,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
-				// Ack/Sup
 				$ack_status_trigger = 0;
 				if (!empty($trig['lastEvent'])) {
 					$ack_status_trigger = (int)($trig['lastEvent']['acknowledged'] ?? 0);
 				}
 
-				// Opdata
 				$opdata = $trig['opdata'] ?? '';
 
 				$trigger_info_map[$tid] = [
@@ -135,7 +123,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Construção do Array Final de Problemas
+		// 5. Construção do Array Final
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -147,38 +135,43 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
-				// --- FILTROS MANUAIS ---
-				// 1. Exclude Hosts
+				// Filtros Manuais
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
-
-				// 2. Maintenance
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// Monta o objeto do problema
-				$age_seconds = time() - $problem['clock'];
+				// --- DADOS SEGUROS DO PROBLEMA ---
+				// Usa ?? para evitar "Undefined array key"
+				$r_eventid = $problem['r_eventid'] ?? 0;
+				$clock = $problem['clock'] ?? time();
+				$severity = (int)($problem['severity'] ?? 0);
+				$name = $problem['name'] ?? _('Unknown problem');
+
+				$age_seconds = time() - $clock;
 				
 				$problems_final[] = [
 					'eventid' => $problem['eventid'],
 					'objectid' => $triggerid,
-					'name' => $problem['name'],
-					'severity' => (int)$problem['severity'],
-					'status' => ($problem['r_eventid'] != 0) ? 'RESOLVED' : 'PROBLEM',
-					'clock' => $problem['clock'],
-					'time' => date('d M Y H:i:s', $problem['clock']),
+					'name' => $name,
+					'severity' => $severity,
+					
+					// CORREÇÃO AQUI: Usa a variável segura $r_eventid
+					'status' => ($r_eventid != 0) ? 'RESOLVED' : 'PROBLEM',
+					
+					'clock' => $clock,
+					'time' => date('d M Y H:i:s', $clock),
 					'age' => $this->formatAge($age_seconds),
 					'age_seconds' => $age_seconds,
 					
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
 					
-					'ack_count' => $info['ack'], // 1 ou 0
+					'ack_count' => $info['ack'],
 					'operational_data' => $info['opdata']
 				];
 			}
 		}
 
-		// 6. Ordenação (Sort)
-		// Mapeia o INT do form para string
+		// 6. Ordenação
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
@@ -188,26 +181,20 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		usort($problems_final, function($a, $b) use ($sort_key) {
 			if ($sort_key == 'hostname') {
-				// Host ASC
 				$cmp = strcmp($a['hostname'], $b['hostname']);
 				if ($cmp !== 0) return $cmp;
-				// Desempate: Severity DESC -> Time DESC
 				if ($a['severity'] !== $b['severity']) return $b['severity'] - $a['severity'];
 				return $b['clock'] - $a['clock'];
 			} 
 			elseif ($sort_key == 'severity') {
-				// Severity DESC
 				if ($a['severity'] !== $b['severity']) return $b['severity'] - $a['severity'];
-				// Desempate: Time DESC
 				return $b['clock'] - $a['clock'];
 			} 
-			else { // Time (clock)
-				// Time DESC
+			else { 
 				return $b['clock'] - $a['clock'];
 			}
 		});
 
-		// Aplica limite de linhas
 		$problems_final = array_slice($problems_final, 0, $show_lines);
 
 		$response_data = [
