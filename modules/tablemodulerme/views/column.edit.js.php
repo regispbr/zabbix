@@ -1,3 +1,8 @@
+<?php
+
+use Modules\TableModuleRME\Includes\CWidgetFieldColumnsList;
+
+?>
 
 window.tablemodulerme_column_edit_form = new class {
 
@@ -105,7 +110,9 @@ window.tablemodulerme_column_edit_form = new class {
 
 		// Initialize Advanced configuration collapsible.
 		const collapsible = this.#form.querySelector(`fieldset.collapsible`);
-		new CFormFieldsetCollapsible(collapsible);
+		if (collapsible) {
+			new CFormFieldsetCollapsible(collapsible);
+		}
 
 		// Field trimming.
 		this.#form.querySelectorAll('[name="min"], [name="max"]').forEach(element => {
@@ -118,11 +125,16 @@ window.tablemodulerme_column_edit_form = new class {
 		this.#form.style.display = '';
 		this.#overlay.recoverFocus();
 
-		this.#form.addEventListener('submit', () => this.submit());
+		this.#form.addEventListener('submit', (e) => {
+			e.preventDefault();
+			this.submit();
+		});
 	}
 	
 	#findRecurse(parent, classToSearch) {
-		if (parent.classList.contains(classToSearch)) {
+		if (!parent) return null;
+		
+		if (parent.classList && parent.classList.contains(classToSearch)) {
 			return parent;
 		}
 		
@@ -146,188 +158,242 @@ window.tablemodulerme_column_edit_form = new class {
 		const url_display_mode = this.#form.querySelector('[name=url_display_mode]:checked').value;
 
 		// Column title	
-		for (const element of this.#form.querySelectorAll('.js-column-title')) {
-			element.style.display = (this.tgt.style.display == 'none') ? 'none' : '';
+		const titleFields = this.#form.querySelectorAll('.js-column-title');
+		for (let i = 0; i < titleFields.length; i++) {
+			const element = titleFields[i];
+			element.style.display = (this.tgt && this.tgt.style.display == 'none') ? 'none' : '';
 		}
 
 		// Broadcast in grouped cell
-		for (const element of this.#form.querySelectorAll('.js-broadcast-in-group-cell')) {
-			element.style.display = (this.tgt.style.display == 'none') ? 'none' : '';
+		const broadcastFields = this.#form.querySelectorAll('.js-broadcast-in-group-cell');
+		for (let i = 0; i < broadcastFields.length; i++) {
+			const element = broadcastFields[i];
+			element.style.display = (this.tgt && this.tgt.style.display == 'none') ? 'none' : '';
 		}
 
 		// Display.
-		const display_show = display_value_as == 1;
-		for (const element of this.#form.querySelectorAll('.js-display-row')) {
+		const display_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const displayRows = this.#form.querySelectorAll('.js-display-row');
+		for (let i = 0; i < displayRows.length; i++) {
+			const element = displayRows[i];
 			element.style.display = display_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !display_show;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !display_show;
 			}
 		}
 
 		// Sparkline.
-		const sparkline_show = display_value_as == 1			&& display == 6;
+		const sparkline_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?> 
+			&& display == <?= CWidgetFieldColumnsList::DISPLAY_SPARKLINE ?>;
 
-		for (const element of this.#form.querySelectorAll('.js-sparkline-row')) {
+		const sparklineRows = this.#form.querySelectorAll('.js-sparkline-row');
+		for (let i = 0; i < sparklineRows.length; i++) {
+			const element = sparklineRows[i];
 			element.style.display = sparkline_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !sparkline_show;
+			
+			// Isso aqui já desabilita os inputs dentro do container, inclusive o time_period
+			const inputs = element.querySelectorAll('input, select, textarea, button');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !sparkline_show;
 			}
 		}
-
-		this.#form.fields['sparkline[time_period]'].disabled = !sparkline_show;
+		// A LINHA QUE CAUSAVA ERRO FOI REMOVIDA DAQUI
 
 		// Min/Max.
-		const min_max_show = display_value_as == 1  && [
-			'2',
-			'3'
-		].includes(display);
-		for (const element of this.#form.querySelectorAll('.js-min-max-row')) {
+		const min_max_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?> 
+			&& ['<?= CWidgetFieldColumnsList::DISPLAY_BAR ?>', '<?= CWidgetFieldColumnsList::DISPLAY_INDICATORS ?>'].includes(display);
+		
+		const minMaxRows = this.#form.querySelectorAll('.js-min-max-row');
+		for (let i = 0; i < minMaxRows.length; i++) {
+			const element = minMaxRows[i];
 			element.style.display = min_max_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !min_max_show;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !min_max_show;
 			}
 		}
 
 		// Highlights.
-		const highlights_show = display_value_as == 2;
-		for (const element of this.#form.querySelectorAll('.js-highlights-row')) {
+		const highlights_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_TEXT ?>;
+		const highlightRows = this.#form.querySelectorAll('.js-highlights-row');
+		for (let i = 0; i < highlightRows.length; i++) {
+			const element = highlightRows[i];
 			element.style.display = highlights_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !highlights_show;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !highlights_show;
 			}
 		}
 
 		// URL display options.
-		const display_url = display_value_as == 100;
-		const url_override_show = display_value_as == 100 &&
-			url_display_mode == 2;
+		const display_url = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_URL ?>;
+		const url_override_show = display_url && url_display_mode == <?= CWidgetFieldColumnsList::URL_DISPLAY_CUSTOM ?>;
 
-		for (const element of this.#form.querySelectorAll('.js-url-display-mode')) {
+		const urlDisplayModeRows = this.#form.querySelectorAll('.js-url-display-mode');
+		for (let i = 0; i < urlDisplayModeRows.length; i++) {
+			const element = urlDisplayModeRows[i];
 			element.style.display = display_url ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !display_url;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !display_url;
 			}
 		}
 
-		for (const element of this.#form.querySelectorAll('.js-url-display-override')) {
+		const urlOverrideRows = this.#form.querySelectorAll('.js-url-display-override');
+		for (let i = 0; i < urlOverrideRows.length; i++) {
+			const element = urlOverrideRows[i];
 			element.style.display = url_override_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !url_override_show;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !url_override_show;
 			}
 		}
 
-		for (const element of this.#form.querySelectorAll('.js-url-custom-override')) {
+		const urlCustomRows = this.#form.querySelectorAll('.js-url-custom-override');
+		for (let i = 0; i < urlCustomRows.length; i++) {
+			const element = urlCustomRows[i];
 			element.style.display = url_override_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !url_override_show;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !url_override_show;
 			}
 		}
 
-		for (const element of this.#form.querySelectorAll('.js-url-open-in')) {
+		const urlOpenInRows = this.#form.querySelectorAll('.js-url-open-in');
+		for (let i = 0; i < urlOpenInRows.length; i++) {
+			const element = urlOpenInRows[i];
 			element.style.display = display_url ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !display_url;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !display_url;
 			}
 		}
 
 		// Thresholds.
-		const thresholds_show = display_value_as == 1;
-		for (const element of this.#form.querySelectorAll('.js-thresholds-row')) {
+		const thresholds_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const thresholdRows = this.#form.querySelectorAll('.js-thresholds-row');
+		for (let i = 0; i < thresholdRows.length; i++) {
+			const element = thresholdRows[i];
 			element.style.display = thresholds_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !thresholds_show;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !thresholds_show;
 			}
 		}
 
 		// Decimal places.
-		const decimals_show = display_value_as == 1;
-		for (const element of this.#form.querySelectorAll('.js-decimals-row')) {
+		const decimals_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const decimalRows = this.#form.querySelectorAll('.js-decimals-row');
+		for (let i = 0; i < decimalRows.length; i++) {
+			const element = decimalRows[i];
 			element.style.display = decimals_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !decimals_show;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !decimals_show;
 			}
 		}
 
 		// Column aggregation.		
-		for (const element of this.#form.querySelectorAll('.js-column-agg-row')) {
-			element.style.display = (this.tgt.style.display == 'none') ? 'none' : '';
+		const colAggRows = this.#form.querySelectorAll('.js-column-agg-row');
+		for (let i = 0; i < colAggRows.length; i++) {
+			const element = colAggRows[i];
+			element.style.display = (this.tgt && this.tgt.style.display == 'none') ? 'none' : '';
 		}
 
 		// Aggregation function.
 		const aggregation_function_select = this.#form.querySelector('z-select[name=aggregate_function]');
-		[1, 2, 3, 5].forEach(option => {
-			aggregation_function_select.getOptionByValue(option).disabled =
-				display_value_as != 1;
-			aggregation_function_select.getOptionByValue(option).hidden =
-				display_value_as != 1;
+		if (aggregation_function_select) {
+			[1, 2, 3, 5].forEach(option => {
+				const opt = aggregation_function_select.getOptionByValue(option);
+				if (opt) {
+					opt.disabled = display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+					opt.hidden = display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+				}
 
-			if (aggregation_function_select.value == option
-					&& display_value_as != 1) {
-				aggregation_function_select.value = 0;
-			}
-		});
+				if (aggregation_function_select.value == option && display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>) {
+					aggregation_function_select.value = 0;
+				}
+			});
+		}
 
 		// Time period.
-		const time_period_show = parseInt(document.getElementById('aggregate_function').value) != 0;
-		this.#form.fields.time_period.disabled = !time_period_show;
-		this.#form.fields.time_period.hidden = !time_period_show;
+		const aggFuncInput = document.getElementById('aggregate_function');
+		const time_period_show = aggFuncInput && parseInt(aggFuncInput.value) != 0;
+		
+		// CORREÇÃO: Buscamos o container pela classe JS em vez de usar .fields
+		const timePeriodRows = this.#form.querySelectorAll('.js-time-period');
+		for (let i = 0; i < timePeriodRows.length; i++) {
+			const element = timePeriodRows[i];
+			element.style.display = time_period_show ? '' : 'none';
+			const inputs = element.querySelectorAll('input, select, textarea, button');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !time_period_show;
+			}
+		}
 
 		// History data.
-		const history_show = display_value_as == 1;
-		for (const element of this.#form.querySelectorAll('.js-history-row')) {
+		const history_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const historyRows = this.#form.querySelectorAll('.js-history-row');
+		for (let i = 0; i < historyRows.length; i++) {
+			const element = historyRows[i];
 			element.style.display = history_show ? '' : 'none';
-
-			for (const input of element.querySelectorAll('input')) {
-				input.disabled = !history_show;
+			const inputs = element.querySelectorAll('input');
+			for (let j = 0; j < inputs.length; j++) {
+				inputs[j].disabled = !history_show;
 			}
 		}
 
 		// Override footer.
-		for (const element of this.#form.querySelectorAll('.js-override-footer')) {
-			element.style.display = (this.tgt.style.display == 'none') ? 'none' : '';
+		const footerRows = this.#form.querySelectorAll('.js-override-footer');
+		for (let i = 0; i < footerRows.length; i++) {
+			const element = footerRows[i];
+			element.style.display = (this.tgt && this.tgt.style.display == 'none') ? 'none' : '';
 		}
 
 		// Option for including itemids encoding in cell for broadcasting
 		const column_pattern_selection = this.#form.querySelector('button[id=column_patterns_aggregation]');
-		for (const element of this.#form.querySelectorAll('.js-include-itemids')) {
-			if (column_pattern_selection.innerText === 'not used' || this.tgt.style.display == 'none') {
+		const includeItemidsRows = this.#form.querySelectorAll('.js-include-itemids');
+		
+		for (let i = 0; i < includeItemidsRows.length; i++) {
+			const element = includeItemidsRows[i];
+			if ((column_pattern_selection && column_pattern_selection.innerText === 'not used') || (this.tgt && this.tgt.style.display == 'none')) {
 				element.style.display = 'none';
-				for (const input of element.querySelectorAll('input')) {
-					input.disabled = 1;
+				const inputs = element.querySelectorAll('input');
+				for (let j = 0; j < inputs.length; j++) {
+					inputs[j].disabled = true;
 				}
 			}
 			else {
 				element.style.display = '';
-				for (const input of element.querySelectorAll('input')) {
-					input.disabled = 0;
+				const inputs = element.querySelectorAll('input');
+				for (let j = 0; j < inputs.length; j++) {
+					inputs[j].disabled = false;
 				}
 			}
 		}
 	}
 
 	submit() {
-		if (this.all_hosts_aggregated?.nextElementSibling.querySelector('[id="aggregate_all_hosts"]').checked &&
-				$('#column_agg_method input[type="hidden"]').val() === '0') {
-			if (!this.aggregation_error) {
-				const title = 'Form configuration error';
-				const messages = ['A \'Column patterns aggregation\' (under Advanced configuration) is required when using \'Aggregate all hosts\' from the main form'];
-				const message_box = makeMessageBox('bad', messages, title)[0];
-				this.#form.parentNode.insertBefore(message_box, this.#form);
-				this.aggregation_error = true;
-			}
+		if (this.all_hosts_aggregated && this.all_hosts_aggregated.nextElementSibling) {
+			const checkbox = this.all_hosts_aggregated.nextElementSibling.querySelector('[id="aggregate_all_hosts"]');
+			const colAggMethod = document.getElementById('column_agg_method'); // Pode ser select normal ou z-select
+			
+			// Ajuste para pegar valor de input hidden se for select customizado
+			const colAggVal = colAggMethod ? colAggMethod.value : '0';
 
-			this.#overlay.unsetLoading();
-			return;
+			if (checkbox && checkbox.checked && colAggVal === '0') {
+				if (!this.aggregation_error) {
+					const title = 'Form configuration error';
+					const messages = ['A \'Column patterns aggregation\' (under Advanced configuration) is required when using \'Aggregate all hosts\' from the main form'];
+					const message_box = makeMessageBox('bad', messages, title)[0];
+					this.#form.parentNode.insertBefore(message_box, this.#form);
+					this.aggregation_error = true;
+				}
+
+				this.#overlay.unsetLoading();
+				return;
+			}
 		}
 
 		const curl = new Curl(this.#form.getAttribute('action'));
@@ -355,7 +421,9 @@ window.tablemodulerme_column_edit_form = new class {
 				this.#dialogue.dispatchEvent(new CustomEvent('dialogue.submit', {detail: response}));
 			})
 			.catch((exception) => {
-				for (const element of this.#form.parentNode.children) {
+				const children = this.#form.parentNode.children;
+				for (let i = 0; i < children.length; i++) {
+					const element = children[i];
 					if (element.matches('.msg-good, .msg-bad, .msg-warning')) {
 						element.parentNode.removeChild(element);
 					}
