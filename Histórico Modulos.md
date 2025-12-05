@@ -51,15 +51,13 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
 (✓) ⏳
 - Incluir filtro por tag e value no alarm widget. (1°) (✓)
   
-- Averiguar todos os widgets para conferir se estão funcionando com essa funcionalidade, e consertar aqueles que não estão.  (2°) ⏳
+- Averiguar todos os widgets para conferir se estão funcionando com essa funcionalidade, e consertar aqueles que não estão.  (2°) (✓)
 
-- Validar correlação dos alarmes, exibir e contar apenas aqueles que estão realmente ativos.   (3°) ⏳
+- Incluir Problem Status nos demais widgets -> Alarmwidget para usar de base.  (3°) ⏳
 
-- Incluir Problem Status nos demais widgets -> Alarmwidget para usar de base.  (4°) ⏳
+- Alterar demais widgets para mesma organização do filtro de severidade, ficando igual ao do alarmwdiget no forms.  (4°) (✓)
 
-- Alterar demais widgets para mesma organização do filtro de severidade, ficando igual ao do alarmwdiget no forms.  (5°) (✓)
+- Incluir filtro de exibir somente os problemas suprimidos. (5°) ⏳
 
-- Incluir filtro de exibir somente os problemas suprimidos. (6°)
-
-- Alterar pop-up do Hostgroupalarms para ficar igual ao do mapwidget.
+- Alterar pop-up do Hostgroupalarms para ficar igual ao do mapwidget. (6°) ⏳
 
