@@ -59,3 +59,5 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
 
 - Alterar demais widgets para mesma organização do filtro de severidade, ficando igual ao do alarmwdiget no forms.  (5°) ⏳
 
+- Incluir filtro de exibir somente os problemas suprimidos.
+
