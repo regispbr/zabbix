@@ -1,8 +1,6 @@
 <?php declare(strict_types = 0);
-/*
-** Copyright (C) 2001-2025 Zabbix SIA
-** ... (Licença) ...
-**/
+
+use Modules\HostGroupStatus\Includes\WidgetForm;
 
 /**
  * Host Group Status widget form view.
@@ -10,8 +8,6 @@
  * @var CView $this
  * @var array $data
  */
-
-use Modules\HostGroupStatus\Includes\WidgetForm;
 
 $form = new CWidgetFormView($data);
 
@@ -35,6 +31,14 @@ if (array_key_exists('exclude_hosts', $data['fields'])) {
 		new CWidgetFieldMultiSelectHostView($data['fields']['exclude_hosts'])
 	);
 }
+
+// --- MUDANÇA: Novo campo de Severidade Compacto ---
+if (array_key_exists('severities', $data['fields'])) {
+	$form->addField(
+		new CWidgetFieldSeveritiesView($data['fields']['severities'])
+	);
+}
+// --- FIM DA MUDANÇA ---
 
 // Problem tags (evaltype) field
 if (array_key_exists('evaltype', $data['fields'])) {
@@ -64,13 +68,12 @@ if (array_key_exists('show_suppressed', $data['fields'])) {
 	);
 }
 
-// --- MUDANÇA AQUI: Renderiza o novo campo ---
+// Exclude maintenance
 if (array_key_exists('exclude_maintenance', $data['fields'])) {
 	$form->addField(
 		new CWidgetFieldCheckBoxView($data['fields']['exclude_maintenance'])
 	);
 }
-// --- FIM DA MUDANÇA ---
 
 // Count mode field
 if (array_key_exists('count_mode', $data['fields'])) {
@@ -85,39 +88,6 @@ if (array_key_exists('widget_color', $data['fields'])) {
 		new CWidgetFieldColorView($data['fields']['widget_color'])
 	);
 }
-
-// ----- NOVOS FILTROS DE SEVERIDADE -----
-if (array_key_exists('show_not_classified', $data['fields'])) {
-	$form->addField(
-		new CWidgetFieldCheckBoxView($data['fields']['show_not_classified'])
-	);
-}
-if (array_key_exists('show_information', $data['fields'])) {
-	$form->addField(
-		new CWidgetFieldCheckBoxView($data['fields']['show_information'])
-	);
-}
-if (array_key_exists('show_warning', $data['fields'])) {
-	$form->addField(
-		new CWidgetFieldCheckBoxView($data['fields']['show_warning'])
-	);
-}
-if (array_key_exists('show_average', $data['fields'])) {
-	$form->addField(
-		new CWidgetFieldCheckBoxView($data['fields']['show_average'])
-	);
-}
-if (array_key_exists('show_high', $data['fields'])) {
-	$form->addField(
-		new CWidgetFieldCheckBoxView($data['fields']['show_high'])
-	);
-}
-if (array_key_exists('show_disaster', $data['fields'])) {
-	$form->addField(
-		new CWidgetFieldCheckBoxView($data['fields']['show_disaster'])
-	);
-}
-// ----- FIM DOS FILTROS DE SEVERIDADE -----
 
 // Show group name field
 if (array_key_exists('show_group_name', $data['fields'])) {
