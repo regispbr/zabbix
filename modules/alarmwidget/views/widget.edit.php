@@ -52,16 +52,16 @@ if (array_key_exists('exclude_maintenance', $data['fields'])) {
 
 // Tags evaluation type
 if (array_key_exists('evaltype', $data['fields'])) {
-    $form->addField(
-        new CWidgetFieldRadioButtonListView($data['fields']['evaltype'])
-    );
+	$form->addField(
+		new CWidgetFieldRadioButtonListView($data['fields']['evaltype'])
+	);
 }
 
 // Tags
 if (array_key_exists('tags', $data['fields'])) {
-    $form->addField(
-        new CWidgetFieldTagsView($data['fields']['tags'])
-    );
+	$form->addField(
+		new CWidgetFieldTagsView($data['fields']['tags'])
+	);
 }
 
 // Problem status field
@@ -78,22 +78,27 @@ if (array_key_exists('show_ack', $data['fields'])) {
 	);
 }
 
-// --- MUDANÇA 1: RENDERIZA O FILTRO "SUPPRESSED" ---
+// Show suppressed field
 if (array_key_exists('show_suppressed', $data['fields'])) {
 	$form->addField(
 		new CWidgetFieldCheckBoxView($data['fields']['show_suppressed'])
 	);
 }
+
+// --- MUDANÇA AQUI: Adicionado Show ONLY suppressed ---
+if (array_key_exists('show_suppressed_only', $data['fields'])) {
+	$form->addField(
+		new CWidgetFieldCheckBoxView($data['fields']['show_suppressed_only'])
+	);
+}
 // --- FIM DA MUDANÇA ---
 
-// --- MUDANÇA 2: RENDERIZA O FILTRO "SORT BY" ---
+// Sort By
 if (array_key_exists('sort_by', $data['fields'])) {
 	$form->addField(
 		new CWidgetFieldRadioButtonListView($data['fields']['sort_by'])
 	);
 }
-// --- FIM DA MUDANÇA ---
-
 
 // Column visibility checkboxes
 if (array_key_exists('show_column_host', $data['fields'])) {
