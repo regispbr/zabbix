@@ -1,0 +1,16 @@
+{
+	"manifest_version": 2.0,
+	"id": "menuwidget",
+	"name": "Menu Widget",
+	"version": "1.0.0",
+	"namespace": "MenuWidget",
+	"description": "Widget de menu personalizável com suporte a orientação horizontal/vertical, URLs e imagens",
+	"author": "Custom Development",
+	"url": "",
+	"actions": [
+		{
+			"name": "menuwidget.view",
+			"class": "WidgetView"
+		}
+	]
+}
