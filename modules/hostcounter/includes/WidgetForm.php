@@ -11,52 +11,43 @@ use Zabbix\Widgets\{
 	Fields\CWidgetFieldTextBox
 };
 
-/**
- * Host Counter widget form.
- */
 class WidgetForm extends CWidgetForm {
 
 	public function addFields(): self {
-		// Host group selection
 		$this->addField(
 			(new CWidgetFieldMultiSelectGroup('hostgroups', _('Host groups')))
 				->setFlags(CWidgetField::FLAG_NOT_EMPTY | CWidgetField::FLAG_LABEL_ASTERISK)
 		)
-		// Host selection
 		->addField(
 			(new CWidgetFieldMultiSelectHost('hosts', _('Hosts')))
 				->setFlags(CWidgetField::FLAG_LABEL_ASTERISK)
 		)
-		
-		// Count options
 		->addField(
-			(new CWidgetFieldCheckBox('count_problems', _('Contar problemas')))
+			(new CWidgetFieldCheckBox('count_problems', _('Count problems')))
 				->setDefault(1)
 		)
 		->addField(
-			(new CWidgetFieldCheckBox('count_items', _('Contar itens')))
+			(new CWidgetFieldCheckBox('count_items', _('Count items')))
 				->setDefault(1)
 		)
 		->addField(
-			(new CWidgetFieldCheckBox('count_triggers', _('Contar triggers')))
+			(new CWidgetFieldCheckBox('count_triggers', _('Count triggers')))
 				->setDefault(1)
 		)
 		->addField(
-			(new CWidgetFieldCheckBox('count_disabled', _('Contar hosts desativados')))
+			(new CWidgetFieldCheckBox('count_disabled', _('Count disabled hosts')))
 				->setDefault(1)
 		)
 		->addField(
-			(new CWidgetFieldCheckBox('count_maintenance', _('Contar hosts em manutenção')))
+			(new CWidgetFieldCheckBox('count_maintenance', _('Count maintenance hosts')))
 				->setDefault(1)
 		)
 		->addField(
-			(new CWidgetFieldCheckBox('show_suppressed', _('Mostrar problemas suprimidos')))
+			(new CWidgetFieldCheckBox('show_suppressed', _('Show suppressed problems')))
 				->setDefault(0)
 		)
-		
-		// Custom icon
 		->addField(
-			(new CWidgetFieldTextBox('custom_icon', _('Ícone personalizado')))
+			(new CWidgetFieldTextBox('custom_icon', _('Custom icon filename')))
 				->setDefault('')
 		);
 
