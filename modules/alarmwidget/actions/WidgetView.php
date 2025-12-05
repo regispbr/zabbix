@@ -1,9 +1,4 @@
 <?php declare(strict_types = 0);
-/*
-** Zabbix
-** Copyright (C) 2001-2025 Zabbix SIA
-** ... (Licença) ...
-**/
 
 namespace Modules\AlarmWidget\Actions;
 
@@ -12,6 +7,7 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
+use CSeverityHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -21,8 +17,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
-		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
-		if (!defined('TRIGGERS_OPTION_IN_PROBLEM')) define('TRIGGERS_OPTION_IN_PROBLEM', 2);
+		
+		// Opções de Show (Engine Nativa)
+		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1); // Problemas recentes
+		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2); // Histórico (All)
+		if (!defined('TRIGGERS_OPTION_IN_PROBLEM')) define('TRIGGERS_OPTION_IN_PROBLEM', 3); // Apenas em problema
 
 		// 1. Coleta de Filtros
 		$groupids = $this->fields_values['groupids'] ?? [];
@@ -34,10 +33,14 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 		
+		// --- STATUS E SUPPRESSED ---
 		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
+		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
+		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
+		// ---------------------------
+
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
-		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
 		// Configuração de Colunas
@@ -54,14 +57,24 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 		}
 
-		// 2. Mapeamento de Filtros
-		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
+		// 2. Mapeamento de Problem Status para Engine Nativa
+		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; // Default (Problem)
+		
+		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL) {
+			$show_mode = TRIGGERS_OPTION_ALL; // Histórico
+		} 
+		elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+			$show_mode = TRIGGERS_OPTION_ALL; // Precisamos buscar no histórico para achar resolvidos
+		}
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
 		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK;
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
+
+		// Se "Only Suppressed" está marcado, precisamos forçar "Show Suppressed" para a engine trazer eles
+		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
 
 		// 3. Chamada à Engine Nativa
 		$data = CScreenProblem::getData([
@@ -73,12 +86,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'evaltype' => $evaltype,
 			'tags' => $tags,
 			'show_symptoms' => false,
-			'show_suppressed' => ($show_suppressed == 1),
+			'show_suppressed' => $engine_show_suppressed, // Passa true se qualquer um dos dois estiver marcado
 			'acknowledgement_status' => $ack_status,
 			'show_opdata' => 0
 		], $search_limit);
 
-		// 4. Hidratação Robusta (API de Trigger)
+		// 4. Hidratação Robusta
 		$triggerIds = [];
 		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
@@ -108,7 +121,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
-				// --- CORREÇÃO AQUI: Capturando Ack E Suppressed ---
 				$ack_status_trigger = 0;
 				$sup_status_trigger = 0;
 				if (!empty($trig['lastEvent'])) {
@@ -121,13 +133,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
 					'ack' => $ack_status_trigger,
-					'sup' => $sup_status_trigger, // Armazena o suppressed
+					'sup' => $sup_status_trigger,
 					'opdata' => $opdata
 				];
 			}
 		}
 
-		// 5. Construção do Array Final
+		// 5. Construção do Array Final e Filtros Avançados
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -139,12 +151,31 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
-				// Filtros Manuais
+				// --- FILTROS MANUAIS ---
+				
+				// 1. Exclude Hosts
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
+				
+				// 2. Maintenance
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// Dados seguros
+				// 3. Only Suppressed (NOVO)
+				if ($show_suppressed_only == 1 && $info['sup'] == 0) continue; // Pula se NÃO for suprimido
+
+				// 4. Problem Status (Manual)
+				// Se escolheu 'RESOLVED', a engine trouxe All (History). Precisamos filtrar só os resolvidos.
+				// r_eventid != 0 significa resolvido.
 				$r_eventid = $problem['r_eventid'] ?? 0;
+				
+				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+					if ($r_eventid == 0) continue; // Pula se ainda é problema (ativo)
+				}
+				elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
+					// O show_mode já deve ter cuidado disso, mas por segurança:
+					if ($r_eventid != 0) continue; // Pula se já foi resolvido
+				}
+
+				// Dados seguros
 				$clock = $problem['clock'] ?? time();
 				$severity = (int)($problem['severity'] ?? 0);
 				$name = $problem['name'] ?? _('Unknown problem');
@@ -163,9 +194,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
-					
 					'ack_count' => $info['ack'],
-					'suppressed' => $info['sup'], // --- PASSANDO PARA O FRONTEND ---
+					'suppressed' => $info['sup'], 
 					'operational_data' => $info['opdata']
 				];
 			}
