@@ -13,7 +13,7 @@ use Modules\HostGroupAlarms\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// Define constantes de fallback
+		// Constantes de fallback
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
@@ -51,7 +51,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$ack_status = ($show_acknowledged == 1) ? ZBX_ACK_STATUS_ALL : ZBX_ACK_STATUS_UNACK;
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 2. Chama Engine Nativa
+		// 2. PARTE 1: Engine Nativa (Apenas para encontrar os problemas corretos)
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $hostgroups,
@@ -66,13 +66,39 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_opdata' => 0
 		], $search_limit);
 
-		// 3. Hidratação dos Dados
-		$data = CScreenProblem::makeData($data, [
-			'show' => $show_mode,
-			'details' => 0,
-			'show_opdata' => 0
-		]);
+		// 3. PARTE 2: Hidratação Robusta (A "Segunda Lógica")
+		// Coletamos todos os triggerIDs retornados pela engine nativa
+		$triggerIds = [];
+		if (!empty($data['problems'])) {
+			foreach ($data['problems'] as $problem) {
+				$triggerIds[] = $problem['objectid'];
+			}
+		}
 
+		// Buscamos os dados de Host EXPLICITAMENTE na API
+		// Isso garante que teremos 'name' e 'maintenance_status' sem erros.
+		$trigger_host_map = [];
+		if (!empty($triggerIds)) {
+			$db_triggers = API::Trigger()->get([
+				'triggerids' => $triggerIds,
+				'output' => ['triggerid'],
+				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
+				'preservekeys' => true
+			]);
+
+			foreach ($db_triggers as $tid => $trig) {
+				if (!empty($trig['hosts'])) {
+					$first_host = reset($trig['hosts']);
+					$trigger_host_map[$tid] = [
+						'id' => $first_host['hostid'],
+						'name' => $first_host['name'],
+						'maintenance' => (int)$first_host['maintenance_status'] // Garante inteiro
+					];
+				}
+			}
+		}
+
+		// 4. Processamento Final (Merge das duas lógicas)
 		$alarm_counts = [0=>0, 1=>0, 2=>0, 3=>0, 4=>0, 5=>0];
 		$detailed_alarms = [];
 		$total_alarms = 0;
@@ -82,34 +108,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 			foreach ($data['problems'] as $problem) {
 				$triggerid = $problem['objectid'] ?? 0;
 				
-				if (!isset($data['triggers'][$triggerid])) continue;
-				$trigger = $data['triggers'][$triggerid];
-				
-				// Pega o primeiro host do trigger
-				$first_host_raw = null;
-				if (!empty($trigger['hosts'])) {
-					$first_host_raw = reset($trigger['hosts']);
-				}
+				// Se não conseguimos recuperar o host na nossa busca explícita, ignoramos
+				if (!isset($trigger_host_map[$triggerid])) continue;
 
-				if (!$first_host_raw) continue;
+				$host_info = $trigger_host_map[$triggerid];
 
-				$host_id = $first_host_raw['hostid'];
-				
-				// --- CORREÇÃO BLINDADA: Status de Manutenção ---
-				// Verifica explicitamente se a chave existe antes de ler
-				$host_maintenance_status = 0;
-				if (is_array($first_host_raw) && array_key_exists('maintenance_status', $first_host_raw)) {
-					$host_maintenance_status = (int)$first_host_raw['maintenance_status'];
-				}
-
-				// --- FILTROS MANUAIS ---
+				// --- FILTROS DE HOST (Manual) ---
 				// 1. Exclude Hosts
-				if (in_array($host_id, $exclude_hosts)) continue;
+				if (in_array($host_info['id'], $exclude_hosts)) continue;
 
-				// 2. Maintenance
-				if ($exclude_maintenance == 1 && $host_maintenance_status == 1) continue;
+				// 2. Maintenance (Agora temos certeza que o valor existe e é int)
+				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// Contagem
+				// Contabiliza
 				$severity = (int)($problem['severity'] ?? 0);
 				$alarm_counts[$severity]++;
 				$total_alarms++;
@@ -118,27 +129,17 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
-				// --- CORREÇÃO BLINDADA: Nome do Host ---
-				// Tenta 'name', se falhar tenta 'host', se falhar usa 'Unknown'
-				$host_name_display = _('Unknown host');
-				if (is_array($first_host_raw)) {
-					if (!empty($first_host_raw['name'])) {
-						$host_name_display = $first_host_raw['name'];
-					} elseif (!empty($first_host_raw['host'])) {
-						$host_name_display = $first_host_raw['host'];
-					}
-				}
-
+				// Dados para o Frontend
 				$p_ack = (int)($problem['acknowledged'] ?? 0);
 				$p_sup = (int)($problem['suppressed'] ?? 0);
-				
+
 				$detailed_alarms[] = [
 					'eventid' => $problem['eventid'],
 					'triggerid' => $triggerid,
 					'description' => $problem['name'],
 					'severity' => $severity,
 					'severity_name' => CSeverityHelper::getName($severity),
-					'host_name' => $host_name_display, // Valor garantido
+					'host_name' => $host_info['name'], // Nome garantido pela nossa busca API
 					'clock' => $problem['clock'],
 					'acknowledged' => $p_ack,
 					'suppressed' => $p_sup
@@ -153,7 +154,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return $b['severity'] - $a['severity'];
 		});
 
-		// 4. Nome do Grupo
+		// 5. Nome do Grupo
 		$group_name = '';
 		if ($this->fields_values['show_group_name'] ?? 1) {
 			if (!empty($this->fields_values['group_name_text'])) {
