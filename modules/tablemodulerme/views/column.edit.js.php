@@ -68,12 +68,13 @@ window.tablemodulerme_column_edit_form = new class {
 				allow_empty: true,
 				dataCallback: (row_data) => {
 					if (!('color' in row_data)) {
-						const color_pickers = this.#form.querySelectorAll(`.${ZBX_STYLE_COLOR_PICKER}`);
+						// CORREÇÃO: Removido ZBX_STYLE_COLOR_PICKER e usado seletor genérico de inputs de cor
+						const color_inputs = this.#form.querySelectorAll('input[name$="[color]"]');
 						const used_colors = [];
 
-						for (const color_picker of color_pickers) {
-							if (color_picker.color !== '') {
-								used_colors.push(color_picker.color);
+						for (const input of color_inputs) {
+							if (input.value !== '') {
+								used_colors.push(input.value);
 							}
 						}
 
@@ -92,12 +93,13 @@ window.tablemodulerme_column_edit_form = new class {
 				allow_empty: true,
 				dataCallback: (row_data) => {
 					if (!('color' in row_data)) {
-						const color_pickers = this.#form.querySelectorAll(`.${ZBX_STYLE_COLOR_PICKER}`);
+						// CORREÇÃO: Mesma correção para highlights
+						const color_inputs = this.#form.querySelectorAll('input[name$="[color]"]');
 						const used_colors = [];
 
-						for (const color_picker of color_pickers) {
-							if (color_picker.color !== '') {
-								used_colors.push(color_picker.color);
+						for (const input of color_inputs) {
+							if (input.value !== '') {
+								used_colors.push(input.value);
 							}
 						}
 
@@ -149,9 +151,6 @@ window.tablemodulerme_column_edit_form = new class {
 		return null;
 	}
 
-	/**
-	 * Updates widget column configuration form field visibility, enable/disable state and available options.
-	 */
 	#updateForm() {
 		const display_value_as = this.#form.querySelector('[name=display_value_as]:checked').value;
 		const display = this.#form.querySelector('[name=display]:checked').value;
@@ -172,7 +171,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Display.
-		const display_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const display_show = display_value_as == 1;
 		const displayRows = this.#form.querySelectorAll('.js-display-row');
 		for (let i = 0; i < displayRows.length; i++) {
 			const element = displayRows[i];
@@ -184,25 +183,21 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Sparkline.
-		const sparkline_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?> 
-			&& display == <?= CWidgetFieldColumnsList::DISPLAY_SPARKLINE ?>;
+		const sparkline_show = display_value_as == 1 && display == 6;
 
 		const sparklineRows = this.#form.querySelectorAll('.js-sparkline-row');
 		for (let i = 0; i < sparklineRows.length; i++) {
 			const element = sparklineRows[i];
 			element.style.display = sparkline_show ? '' : 'none';
 			
-			// Isso aqui já desabilita os inputs dentro do container, inclusive o time_period
 			const inputs = element.querySelectorAll('input, select, textarea, button');
 			for (let j = 0; j < inputs.length; j++) {
 				inputs[j].disabled = !sparkline_show;
 			}
 		}
-		// A LINHA QUE CAUSAVA ERRO FOI REMOVIDA DAQUI
 
 		// Min/Max.
-		const min_max_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?> 
-			&& ['<?= CWidgetFieldColumnsList::DISPLAY_BAR ?>', '<?= CWidgetFieldColumnsList::DISPLAY_INDICATORS ?>'].includes(display);
+		const min_max_show = display_value_as == 1 && ['2', '3'].includes(display);
 		
 		const minMaxRows = this.#form.querySelectorAll('.js-min-max-row');
 		for (let i = 0; i < minMaxRows.length; i++) {
@@ -215,7 +210,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Highlights.
-		const highlights_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_TEXT ?>;
+		const highlights_show = display_value_as == 2;
 		const highlightRows = this.#form.querySelectorAll('.js-highlights-row');
 		for (let i = 0; i < highlightRows.length; i++) {
 			const element = highlightRows[i];
@@ -227,8 +222,8 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// URL display options.
-		const display_url = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_URL ?>;
-		const url_override_show = display_url && url_display_mode == <?= CWidgetFieldColumnsList::URL_DISPLAY_CUSTOM ?>;
+		const display_url = display_value_as == 100;
+		const url_override_show = display_url && url_display_mode == 2;
 
 		const urlDisplayModeRows = this.#form.querySelectorAll('.js-url-display-mode');
 		for (let i = 0; i < urlDisplayModeRows.length; i++) {
@@ -271,7 +266,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Thresholds.
-		const thresholds_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const thresholds_show = display_value_as == 1;
 		const thresholdRows = this.#form.querySelectorAll('.js-thresholds-row');
 		for (let i = 0; i < thresholdRows.length; i++) {
 			const element = thresholdRows[i];
@@ -283,7 +278,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// Decimal places.
-		const decimals_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const decimals_show = display_value_as == 1;
 		const decimalRows = this.#form.querySelectorAll('.js-decimals-row');
 		for (let i = 0; i < decimalRows.length; i++) {
 			const element = decimalRows[i];
@@ -307,11 +302,11 @@ window.tablemodulerme_column_edit_form = new class {
 			[1, 2, 3, 5].forEach(option => {
 				const opt = aggregation_function_select.getOptionByValue(option);
 				if (opt) {
-					opt.disabled = display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
-					opt.hidden = display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+					opt.disabled = display_value_as != 1;
+					opt.hidden = display_value_as != 1;
 				}
 
-				if (aggregation_function_select.value == option && display_value_as != <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>) {
+				if (aggregation_function_select.value == option && display_value_as != 1) {
 					aggregation_function_select.value = 0;
 				}
 			});
@@ -321,7 +316,6 @@ window.tablemodulerme_column_edit_form = new class {
 		const aggFuncInput = document.getElementById('aggregate_function');
 		const time_period_show = aggFuncInput && parseInt(aggFuncInput.value) != 0;
 		
-		// CORREÇÃO: Buscamos o container pela classe JS em vez de usar .fields
 		const timePeriodRows = this.#form.querySelectorAll('.js-time-period');
 		for (let i = 0; i < timePeriodRows.length; i++) {
 			const element = timePeriodRows[i];
@@ -333,7 +327,7 @@ window.tablemodulerme_column_edit_form = new class {
 		}
 
 		// History data.
-		const history_show = display_value_as == <?= CWidgetFieldColumnsList::DISPLAY_VALUE_AS_NUMERIC ?>;
+		const history_show = display_value_as == 1;
 		const historyRows = this.#form.querySelectorAll('.js-history-row');
 		for (let i = 0; i < historyRows.length; i++) {
 			const element = historyRows[i];
