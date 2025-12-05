@@ -22,7 +22,7 @@ use API,
 
 use Modules\NavTreeNext\Widget;
 
-class NavTreeItemEdit extends CController {
+class NavTreeItemUpdate extends CController {
 
 	protected function init(): void {
 		$this->disableCsrfValidation();
@@ -30,12 +30,13 @@ class NavTreeItemEdit extends CController {
 
 	protected function checkInput(): bool {
 		$fields = [
-			'name' => 'required|string',
+			'name' => 'required|string|not_empty',
 			'link_type' => 'required|in 0,1,2',
 			'sysmapid' => 'db sysmaps.sysmapid',
 			'dashboardid' => 'db dashboard.dashboardid',
 			'url' => 'string',
-			'depth' => 'required|ge 1|le '.Widget::MAX_DEPTH
+			'add_submaps' => 'in 0,1',
+			'depth' => 'ge 1|le '.Widget::MAX_DEPTH
 		];
 
 		$ret = $this->validateInput($fields);
@@ -62,63 +63,90 @@ class NavTreeItemEdit extends CController {
 		$sysmapid = $this->getInput('sysmapid', 0);
 		$dashboardid = $this->getInput('dashboardid', 0);
 		$url = $this->getInput('url', '');
+		$add_submaps = (int) $this->getInput('add_submaps', 0);
+		$depth = (int) $this->getInput('depth', 1);
 
-		$sysmap = [];
-		$dashboard = [];
-
+		// Validate map if link_type is map
 		if ($link_type == 0 && $sysmapid != 0) {
 			$sysmaps = API::Map()->get([
-				'output' => ['sysmapid', 'name'],
-				'sysmapids' => [$sysmapid]
+				'output' => [],
+				'sysmapids' => $sysmapid
 			]);
 
-			if ($sysmaps) {
-				$sysmap = $sysmaps[0];
-				$sysmap = [
-					'id' => $sysmap['sysmapid'],
-					'name' => $sysmap['name']
-				];
-			}
-			else {
-				$sysmap = [
-					'id' => $sysmapid,
-					'name' => _('Inaccessible map'),
-					'inaccessible' => true
-				];
+			if (!$sysmaps) {
+				$sysmapid = 0;
 			}
 		}
-		elseif ($link_type == 1 && $dashboardid != 0) {
+
+		// Validate dashboard if link_type is dashboard
+		if ($link_type == 1 && $dashboardid != 0) {
 			$dashboards = API::Dashboard()->get([
-				'output' => ['dashboardid', 'name'],
-				'dashboardids' => [$dashboardid]
+				'output' => [],
+				'dashboardids' => $dashboardid
 			]);
 
-			if ($dashboards) {
-				$dashboard = $dashboards[0];
-				$dashboard = [
-					'id' => $dashboard['dashboardid'],
-					'name' => $dashboard['name']
-				];
-			}
-			else {
-				$dashboard = [
-					'id' => $dashboardid,
-					'name' => _('Inaccessible dashboard'),
-					'inaccessible' => true
-				];
+			if (!$dashboards) {
+				$dashboardid = 0;
 			}
 		}
 
-		$this->setResponse(new CControllerResponseData([
+		$all_sysmapids = [];
+		$hierarchy = [];
+
+		if ($link_type == 0 && $sysmapid != 0 && $add_submaps == 1) {
+			// Recursively select submaps.
+			$sysmapids = [];
+			$sysmapids[$sysmapid] = true;
+
+			do {
+				if ($depth++ > Widget::MAX_DEPTH) {
+					break;
+				}
+
+				$sysmaps = API::Map()->get([
+					'output' => ['sysmapid'],
+					'selectSelements' => ['elements', 'elementtype', 'permission'],
+					'sysmapids' => array_keys($sysmapids),
+					'preservekeys' => true
+				]);
+
+				$all_sysmapids += $sysmapids;
+				$sysmapids = [];
+
+				foreach ($sysmaps as $sysmap) {
+					foreach ($sysmap['selements'] as $selement) {
+						if ($selement['elementtype'] == SYSMAP_ELEMENT_TYPE_MAP
+								&& $selement['permission'] >= PERM_READ) {
+							$element = $selement['elements'][0];
+							$hierarchy[$sysmap['sysmapid']][] = $element['sysmapid'];
+
+							if (!array_key_exists($element['sysmapid'], $all_sysmapids)) {
+								$sysmapids[$element['sysmapid']] = true;
+							}
+						}
+					}
+				}
+			}
+			while ($sysmapids);
+		}
+
+		// Prepare output.
+		$response = [
 			'name' => $this->getInput('name'),
 			'link_type' => $link_type,
-			'sysmap' => $sysmap,
-			'dashboard' => $dashboard,
+			'sysmapid' => $sysmapid,
+			'dashboardid' => $dashboardid,
 			'url' => $url,
-			'depth' => $this->getInput('depth'),
-			'user' => [
-				'debug_mode' => $this->getDebugMode()
-			]
-		]));
+			'hierarchy' => $hierarchy,
+			'submaps' => $all_sysmapids
+				? API::Map()->get([
+					'output' => ['sysmapid', 'name'],
+					'sysmapids' => array_keys($all_sysmapids),
+					'preservekeys' => true
+				])
+				: []
+		];
+
+		$this->setResponse(new CControllerResponseData(['main_block' => json_encode($response, JSON_THROW_ON_ERROR)]));
 	}
 }
