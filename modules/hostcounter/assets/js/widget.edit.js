@@ -1,12 +1,10 @@
 /*
-** Zabbix
-** Copyright (C) 2001-2023 Zabbix SIA
+** Host Counter Widget Edit JavaScript
 */
 
 jQuery(function($) {
 	'use strict';
 
-	// Initialize widget edit form
 	$(document).ready(function() {
 		initializeHostCounterForm();
 	});
@@ -38,12 +36,10 @@ jQuery(function($) {
 			}
 		});
 
-		// Special handling for multiselect fields
 		form.on('change', '.multiselect', function() {
 			updatePreview();
 		});
 
-		// Add preview container
 		addPreviewContainer();
 		updatePreview();
 	}
@@ -55,20 +51,33 @@ jQuery(function($) {
 		if (previewContainer.length === 0) {
 			previewContainer = $('<div class="hostcounter-preview">')
 				.css({
-					'margin-top': '15px', 'padding': '10px', 'border': '1px solid #ccc',
-					'background-color': '#f9f9f9', 'border-radius': '4px'
+					'margin-top': '15px',
+					'padding': '10px',
+					'border': '1px solid #ccc',
+					'background-color': '#f9f9f9',
+					'border-radius': '4px'
 				});
 			
 			const previewLabel = $('<label>').text('Preview:').css({
-				'font-weight': 'bold', 'display': 'block', 'margin-bottom': '5px'
+				'font-weight': 'bold',
+				'display': 'block',
+				'margin-bottom': '5px'
 			});
 			
 			const previewContent = $('<div class="preview-content">')
 				.css({
-					'min-height': '120px', 'min-width': '160px', 'max-width': '300px',
-					'border': '1px solid #ddd', 'background-color': '#fff', 'border-radius': '8px',
-					'display': 'flex', 'flex-wrap': 'wrap', 'justify-content': 'space-around',
-					'align-items': 'center', 'padding': '10px', 'gap': '10px',
+					'min-height': '120px',
+					'min-width': '160px',
+					'max-width': '300px',
+					'border': '1px solid #ddd',
+					'background-color': '#fff',
+					'border-radius': '8px',
+					'display': 'flex',
+					'flex-wrap': 'wrap',
+					'justify-content': 'space-around',
+					'align-items': 'center',
+					'padding': '10px',
+					'gap': '10px',
 					'margin': '0 auto'
 				});
 			
@@ -82,7 +91,6 @@ jQuery(function($) {
 		const previewContent = form.find('.preview-content');
 		if (previewContent.length === 0) return;
 
-		// Get form values
 		const countProblems = form.find('[name="count_problems"]').is(':checked');
 		const countItems = form.find('[name="count_items"]').is(':checked');
 		const countTriggers = form.find('[name="count_triggers"]').is(':checked');
@@ -90,10 +98,9 @@ jQuery(function($) {
 		const countMaintenance = form.find('[name="count_maintenance"]').is(':checked');
 		const customIcon = form.find('[name="custom_icon"]').val();
 
-		// Simulate counter data
 		const counters = [
-			{ label: 'Total Hosts', value: Math.floor(Math.random() * 50) + 10, class: 'counter-total' },
-			{ label: 'Active Hosts', value: Math.floor(Math.random() * 40) + 5, class: 'counter-active' }
+			{ label: 'Total', value: Math.floor(Math.random() * 50) + 10, class: 'counter-total' },
+			{ label: 'Active', value: Math.floor(Math.random() * 40) + 5, class: 'counter-active' }
 		];
 
 		if (countDisabled) {
@@ -118,12 +125,10 @@ jQuery(function($) {
 
 		let content = '';
 		
-		// Add icon if specified
 		if (customIcon) {
 			content += '<div style="position: absolute; top: 5px; right: 5px; font-size: 16px;">📊</div>';
 		}
 
-		// Add counters
 		counters.forEach(function(counter) {
 			const borderColor = getBorderColor(counter.class);
 			content += '<div style="display: inline-block; margin: 2px; padding: 8px; border: 1px solid #ddd; ' +
