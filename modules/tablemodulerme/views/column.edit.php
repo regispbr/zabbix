@@ -6,7 +6,6 @@
  */
 
 use Modules\TableModuleRME\Includes\CWidgetFieldColumnsList;
-// Removemos o use do Sparkline do Zabbix pois criamos o nosso próprio
 use Modules\TableModuleRME\Includes\CWidgetFieldSparkline;
 
 $form = (new CForm())
@@ -102,22 +101,18 @@ $form_grid
 	]));
 
 // Base color.
-// CORREÇÃO: CColorPicker -> CColor
 $form_grid->addItem([
 	new CLabel(_('Base color'), 'lbl_base_color'),
 	new CFormField(
 		(new CColor('base_color', $data['base_color']))
-			->allowEmpty()
 	)
 ]);
 
 // Font color.
-// CORREÇÃO: CColorPicker -> CColor
 $form_grid->addItem([
 	new CLabel(_('Font color'), 'lbl_font_color'),
 	new CFormField(
 		(new CColor('font_color', $data['font_color']))
-			->allowEmpty()
 	)
 ]);
 
@@ -147,28 +142,11 @@ $form_grid->addItem([
 ]);
 
 // Sparkline.
-// CORREÇÃO: Usar a classe local que criamos anteriormente
 $sparkline_field = (new CWidgetFieldSparkline('sparkline', _('Sparkline')))
     ->setInType(CWidgetsData::DATA_TYPE_TIME_PERIOD)
     ->acceptDashboard()
     ->acceptWidget()
     ->setValue($data['sparkline']);
-
-// Como CWidgetFieldSparklineView pode não existir, vamos criar uma view manual simplificada ou usar o genérico se existir
-// Para evitar erro fatal, vamos comentar a view específica e implementar um fallback se necessário.
-// SE existir uma view específica no módulo, usamos ela. Caso contrário, adaptamos.
-// Assumindo que CWidgetFieldSparklineView NÃO existe no core:
-/*
-$sparkline = (new CWidgetFieldSparklineView(
-	$sparkline_field
-))->setFormName($form->getName());
-
-$form_grid->addItem([
-	$sparkline->getLabel()->addClass('js-sparkline-row'),
-	$sparkline->getView()->addClass('js-sparkline-row')
-]);
-*/
-// [!] TODO: Implementar view do Sparkline se for crítico. Por hora, ocultamos para não quebrar.
 
 // Min.
 $form_grid->addItem([
@@ -191,7 +169,6 @@ $form_grid->addItem([
 ]);
 
 // Thresholds.
-// CORREÇÃO: CColorPicker -> CColor
 $thresholds = (new CDiv([
 	(new CTable())
 		->setId('thresholds_table')
@@ -204,8 +181,7 @@ $thresholds = (new CDiv([
 		)),
 	(new CTemplateTag('thresholds-row-tmpl'))
 		->addItem((new CRow([
-			(new CColor('thresholds[#{rowNum}][color]', '#{color}'))
-				->allowEmpty(),
+			(new CColor('thresholds[#{rowNum}][color]', '#{color}')),
 			(new CTextBox('thresholds[#{rowNum}][threshold]', '#{threshold}', false))
 				->setWidth(ZBX_TEXTAREA_TINY_WIDTH)
 				->setAriaRequired(),
@@ -223,7 +199,6 @@ $form_grid->addItem([
 ]);
 
 // Decimal places.
-// CORREÇÃO: CNumericBox -> CTextBox (ou input type number)
 $form_grid->addItem([
 	(new CLabel(_('Decimal places'), 'decimal_places'))->addClass('js-decimals-row'),
 	(new CFormField(
@@ -272,7 +247,6 @@ $form_grid->addItem([
 ]);
 
 // Highlights.
-// CORREÇÃO: CColorPicker -> CColor
 $highlights = (new CDiv([
 	(new CTable())
 		->setId('highlights_table')
@@ -285,8 +259,7 @@ $highlights = (new CDiv([
 		)),
 	(new CTemplateTag('highlights-row-tmpl'))
 		->addItem((new CRow([
-			(new CColor('highlights[#{rowNum}][color]', '#{color}'))
-				->allowEmpty(),
+			(new CColor('highlights[#{rowNum}][color]', '#{color}')),
 			(new CTextBox('highlights[#{rowNum}][pattern]', '#{pattern}', false))
 				->setWidth(ZBX_TEXTAREA_MEDIUM_WIDTH)
 				->setAriaRequired(),
@@ -303,7 +276,6 @@ $form_grid->addItem([
 	(new CFormField($highlights))->addClass('js-highlights-row')
 ]);
 
-// URL Display Mode
 $form_grid->addItem([
 	(new CLabel(_('URL display mode'), 'url_display_mode'))->addClass('js-url-display-mode'),
 	(new CFormField(
@@ -473,7 +445,7 @@ $advanced_configuration
 			makeHelpIcon(_('When using \'Column patterns aggregation\' include all itemids for broadcasting to other widgets'))
 		]))->addClass('js-include-itemids'),
 		(new CFormField(
-			(new CCheckBox('include_itemids'))->setChecked($data['include_itemids'] == 1)
+			(new CCheckBox('include_itemids'))->setChecked($data['include_itemids'])
 		))->addClass('js-include-itemids')
 	]);
 
