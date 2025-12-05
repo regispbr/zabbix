@@ -19,9 +19,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		
 		// Opções de Show (Engine Nativa)
-		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1); // Problemas recentes
-		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2); // Histórico (All)
-		if (!defined('TRIGGERS_OPTION_IN_PROBLEM')) define('TRIGGERS_OPTION_IN_PROBLEM', 3); // Apenas em problema
+		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
+		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
 
 		// 1. Coleta de Filtros
 		$groupids = $this->fields_values['groupids'] ?? [];
@@ -33,14 +32,18 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 		
-		// --- STATUS E SUPPRESSED ---
 		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
-		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
-		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
-		// ---------------------------
-
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
+		
+		// --- LÓGICA DE SUPRESSED ---
+		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
+		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
+		
+		// Se "Mostrar APENAS suprimidos" estiver marcado, somos obrigados a pedir suprimidos para a Engine
+		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
+		// ---------------------------
+
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
 		// Configuração de Colunas
@@ -57,15 +60,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 		}
 
-		// 2. Mapeamento de Problem Status para Engine Nativa
-		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; // Default (Problem)
-		
-		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL) {
-			$show_mode = TRIGGERS_OPTION_ALL; // Histórico
+		// 2. Mapeamento de Filtros
+		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
+		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+			$show_mode = TRIGGERS_OPTION_ALL; 
 		} 
-		elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-			$show_mode = TRIGGERS_OPTION_ALL; // Precisamos buscar no histórico para achar resolvidos
-		}
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -73,10 +72,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// Se "Only Suppressed" está marcado, precisamos forçar "Show Suppressed" para a engine trazer eles
-		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
-
-		// 3. Chamada à Engine Nativa
+		// 3. Chamada à Engine Nativa (CScreenProblem)
+		// Ela retorna os campos 'acknowledged' e 'suppressed' corretos para cada evento.
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -86,12 +83,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'evaltype' => $evaltype,
 			'tags' => $tags,
 			'show_symptoms' => false,
-			'show_suppressed' => $engine_show_suppressed, // Passa true se qualquer um dos dois estiver marcado
+			'show_suppressed' => $engine_show_suppressed, // Passamos a lógica combinada
 			'acknowledgement_status' => $ack_status,
 			'show_opdata' => 0
 		], $search_limit);
 
-		// 4. Hidratação Robusta
+		// 4. Hidratação (Buscar APENAS Nome do Host e OpData)
 		$triggerIds = [];
 		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
@@ -101,11 +98,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$trigger_info_map = [];
 		if (!empty($triggerIds)) {
+			// Não precisamos mais de lastEvent aqui, pois pegaremos o status do próprio problema
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'selectLastEvent' => ['acknowledged', 'suppressed'],
 				'preservekeys' => true,
 				'expandData' => true
 			]);
@@ -121,25 +118,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
-				$ack_status_trigger = 0;
-				$sup_status_trigger = 0;
-				if (!empty($trig['lastEvent'])) {
-					$ack_status_trigger = (int)($trig['lastEvent']['acknowledged'] ?? 0);
-					$sup_status_trigger = (int)($trig['lastEvent']['suppressed'] ?? 0);
-				}
-
 				$opdata = $trig['opdata'] ?? '';
 
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					'ack' => $ack_status_trigger,
-					'sup' => $sup_status_trigger,
 					'opdata' => $opdata
 				];
 			}
 		}
 
-		// 5. Construção do Array Final e Filtros Avançados
+		// 5. Construção do Array Final
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -151,34 +139,33 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
-				// --- FILTROS MANUAIS ---
-				
-				// 1. Exclude Hosts
+				// Filtros de Host
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
-				
-				// 2. Maintenance
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// 3. Only Suppressed (NOVO)
-				if ($show_suppressed_only == 1 && $info['sup'] == 0) continue; // Pula se NÃO for suprimido
-
-				// 4. Problem Status (Manual)
-				// Se escolheu 'RESOLVED', a engine trouxe All (History). Precisamos filtrar só os resolvidos.
-				// r_eventid != 0 significa resolvido.
+				// --- DADOS SEGUROS DO PROBLEMA (Vindos da Engine) ---
 				$r_eventid = $problem['r_eventid'] ?? 0;
-				
-				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-					if ($r_eventid == 0) continue; // Pula se ainda é problema (ativo)
-				}
-				elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
-					// O show_mode já deve ter cuidado disso, mas por segurança:
-					if ($r_eventid != 0) continue; // Pula se já foi resolvido
-				}
-
-				// Dados seguros
 				$clock = $problem['clock'] ?? time();
 				$severity = (int)($problem['severity'] ?? 0);
 				$name = $problem['name'] ?? _('Unknown problem');
+				
+				// Status de Ack e Suppressed (Direto do Problema)
+				$p_ack = (int)($problem['acknowledged'] ?? 0);
+				$p_sup = (int)($problem['suppressed'] ?? 0);
+
+				// --- FILTROS LÓGICOS DE EVENTO ---
+				
+				// 1. Problem Status (Resolved vs Problem)
+				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+					if ($r_eventid == 0) continue; // Pula se não for resolvido
+				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
+					if ($r_eventid != 0) continue; // Pula se já foi resolvido
+				}
+
+				// 2. Only Suppressed (A Mágica acontece aqui)
+				if ($show_suppressed_only == 1) {
+					if ($p_sup == 0) continue; // Se não for suprimido, TCHAU.
+				}
 
 				$age_seconds = time() - $clock;
 				
@@ -194,8 +181,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
-					'ack_count' => $info['ack'],
-					'suppressed' => $info['sup'], 
+					
+					'ack_count' => $p_ack,
+					'suppressed' => $p_sup, 
 					'operational_data' => $info['opdata']
 				];
 			}
