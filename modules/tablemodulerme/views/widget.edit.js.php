@@ -6,358 +6,264 @@ use Modules\TableModuleRME\Includes\WidgetForm;
 
 window.widget_tablemodulerme_form = new class {
 
-	/**
-	 * @type {HTMLFormElement}
-	 */
-	#form;
-
-	/**
-	 * @type {string}
-	 */
-	#templateid;
-
-	/**
-	 * @type {HTMLElement}
-	 */
-	#list_columns;
-
-	/**
-	 * @type {Template}
-	 */
-	#list_column_tmpl;
-
 	init({templateid}) {
-		this.#form = document.getElementById('widget-dialogue-form');
-		this.#list_columns = document.getElementById('list_columns');
-		
-		if (!this.#list_columns || !this.#form) {
-			console.error('TableModuleRME: Form or Column list not found.');
-			return;
+		this._form = document.getElementById('widget-dialogue-form');
+		this._list_columns = document.getElementById('list_columns');
+		this._templateid = templateid;
+
+		if (!this._form || !this._list_columns) {
+			return; // Aborta se não encontrar o form para evitar erros
 		}
 
-		this.#list_column_tmpl = new Template(this.#list_columns.querySelector('template').innerHTML);
-		this.#templateid = templateid;
+		this._list_column_tmpl = new Template(this._list_columns.querySelector('template').innerHTML);
 
-		this.#updateForm();
+		this._updateForm();
 
-		this.#list_columns.addEventListener('click', (e) => this.#processColumnsAction(e));
+		// Event Listeners
+		this._list_columns.addEventListener('click', (e) => this._processColumnsAction(e));
 		
-		const ordering_fields = this.#form.querySelectorAll('[name="host_ordering_order_by"], [name="item_ordering_order_by"]');
-		Array.from(ordering_fields).forEach(element => {
-			element.addEventListener('change', () => this.#updateForm());
-		});
+		// Ordenação
+		const orderingFields = this._form.querySelectorAll('[name="host_ordering_order_by"], [name="item_ordering_order_by"]');
+		orderingFields.forEach(el => el.addEventListener('change', () => this._updateForm()));
 
-		// Listeners para inputs de layout
-		const layoutInputs = this.#form.querySelectorAll('input[name="layout"]');
-		Array.from(layoutInputs).forEach(input => {
-			input.addEventListener('change', () => this.#updateForm());
-		});
+		// Layouts (Radio buttons)
+		const layoutInputs = this._form.querySelectorAll('input[name="layout"]');
+		layoutInputs.forEach(input => input.addEventListener('change', () => this._updateForm()));
 
-		// Listeners jQuery para Multiselects
-		const groupIdsEl = document.getElementById('groupids_');
-		if (groupIdsEl) jQuery(groupIdsEl).on('change', () => this.#updateForm());
-
-		const hostIdsEl = document.getElementById('hostids_');
-		if (hostIdsEl) jQuery(hostIdsEl).on('change', () => this.#updateForm());
+		// Multiselects (Compatibilidade jQuery)
+		jQuery('#groupids_').on('change', () => this._updateForm());
+		jQuery('#hostids_').on('change', () => this._updateForm());
 		
-		this.#form.addEventListener('form_fields.changed', () => this.#updateForm());
+		// Listener genérico
+		this._form.addEventListener('form_fields.changed', () => this._updateForm());
 	}
 
-	#updateForm() {
-		if (!this.#form) return;
-
-		// Constantes locais para garantir compatibilidade
-		const LAYOUT_THREE_COL = <?= WidgetForm::LAYOUT_THREE_COL ?>;
-		const LAYOUT_COLUMN_PER = <?= WidgetForm::LAYOUT_COLUMN_PER ?>;
+	_updateForm() {
+		// Layout Constants
 		const LAYOUT_VERTICAL = <?= WidgetForm::LAYOUT_VERTICAL ?>;
+		const LAYOUT_COLUMN_PER = <?= WidgetForm::LAYOUT_COLUMN_PER ?>;
 		
-		const layout3Radio = this.#form.querySelector(`input[name="layout"][value="${LAYOUT_THREE_COL}"]`);
-		const layoutColumnPerRadio = this.#form.querySelector(`input[name="layout"][value="${LAYOUT_COLUMN_PER}"]`);
-		const layoutVerticalRadio = this.#form.querySelector(`input[name="layout"][value="${LAYOUT_VERTICAL}"]`);
+		// Detectar Layout Selecionado
+		const selectedLayoutEl = this._form.querySelector('input[name="layout"]:checked');
+		const selectedLayout = selectedLayoutEl ? parseInt(selectedLayoutEl.value) : <?= WidgetForm::LAYOUT_HORIZONTAL ?>;
 		
-		const column_per_pattern = layoutColumnPerRadio ? layoutColumnPerRadio.checked : false;
-		const vertical_layout = layoutVerticalRadio ? layoutVerticalRadio.checked : false;
+		const isColumnPerPattern = (selectedLayout === LAYOUT_COLUMN_PER);
+		const isVertical = (selectedLayout === LAYOUT_VERTICAL);
 
-		// --- FUNÇÃO DE TOGGLE SEGURA ---
-		const toggleFields = (selector, isEnabled) => {
-			const fields = this.#form.querySelectorAll(selector);
-			// Converte NodeList para Array para evitar erros de iteração
-			Array.from(fields).forEach(field => {
-				field.style.display = isEnabled ? '' : 'none';
-				
-				const inputs = field.querySelectorAll('input, select, textarea, button');
-				Array.from(inputs).forEach(input => {
-					// Verifica explicitamente se o input existe antes de alterar propriedade
-					if (input) {
-						input.disabled = !isEnabled;
-						if (selector.includes('delimiter')) {
-							input.setAttribute('data-no-trim', '1');
-						}
+		// --- FUNÇÃO SEGURA DE VISIBILIDADE ---
+		// Apenas esconde/mostra os containers. Não tenta desativar inputs internos de estruturas complexas.
+		const setVisibility = (selector, isVisible) => {
+			const fields = this._form.querySelectorAll(selector);
+			fields.forEach(field => {
+				field.style.display = isVisible ? '' : 'none';
+				// Habilita/Desabilita apenas inputs simples e diretos para evitar erro em tabelas
+				const simpleInputs = field.querySelectorAll('input:not([type="hidden"]), select, textarea');
+				simpleInputs.forEach(input => {
+					// Verificação de segurança antes de alterar propriedade
+					if (input && input.style) { 
+						input.disabled = !isVisible;
 					}
 				});
 			});
 		};
 
-		// Aplica lógica de campos
-		toggleFields('.field_item_group_by', column_per_pattern);
-		toggleFields('.field_grouping_delimiter', column_per_pattern);
-		toggleFields('.field_aggregate_all_hosts', column_per_pattern);
-		toggleFields('.field_show_grouping_only', column_per_pattern);
+		// Aplica visibilidade baseada no layout
+		setVisibility('.field_item_group_by', isColumnPerPattern);
+		setVisibility('.field_grouping_delimiter', isColumnPerPattern);
+		setVisibility('.field_aggregate_all_hosts', isColumnPerPattern);
+		setVisibility('.field_show_grouping_only', isColumnPerPattern);
 
-		// Lógica inversa para 'no_broadcast_hostid'
-		const broadcastFields = this.#form.querySelectorAll('.field_no_broadcast_hostid');
-		Array.from(broadcastFields).forEach(field => {
-			field.style.display = vertical_layout ? 'none' : '';
-			const inputs = field.querySelectorAll('input');
-			Array.from(inputs).forEach(input => {
-				if (input) input.disabled = vertical_layout;
-			});
-		});
+		// Lógica inversa para Broadcast HostID
+		setVisibility('.field_no_broadcast_hostid', !isVertical);
 		
-		// Ordenação
+		// --- Lógica de Ordenação (Multiselects) ---
 		const ORDERBY_HOST = <?= WidgetForm::ORDERBY_HOST ?>;
 		const ORDERBY_ITEM_VALUE = <?= WidgetForm::ORDERBY_ITEM_VALUE ?>;
 
-		const itemOrderRadio = this.#form.querySelector('[name=item_ordering_order_by]:checked');
-		const hostOrderRadio = this.#form.querySelector('[name=host_ordering_order_by]:checked');
+		const itemOrderEl = this._form.querySelector('[name=item_ordering_order_by]:checked');
+		const hostOrderEl = this._form.querySelector('[name=host_ordering_order_by]:checked');
 
-		const orderByHost = itemOrderRadio ? (parseInt(itemOrderRadio.value) === ORDERBY_HOST) : false;
-		const orderByItemValue = hostOrderRadio ? (parseInt(hostOrderRadio.value) === ORDERBY_ITEM_VALUE) : false;
+		const orderByHost = itemOrderEl ? (parseInt(itemOrderEl.value) === ORDERBY_HOST) : false;
+		const orderByItemValue = hostOrderEl ? (parseInt(hostOrderEl.value) === ORDERBY_ITEM_VALUE) : false;
 
-		const itemSelect = document.getElementById('host_ordering_item_');
-		if (itemSelect) {
-			const wrapper = itemSelect.closest('.form-field');
+		this._toggleMultiselect('host_ordering_item_', orderByItemValue);
+		this._toggleMultiselect('item_ordering_host_', orderByHost);
+
+		this._updateMultiselectUrls();
+	}
+
+	_toggleMultiselect(id, enable) {
+		const el = document.getElementById(id);
+		if (el) {
+			const wrapper = el.closest('.form-field');
 			if (wrapper) {
-				if (orderByItemValue) {
+				if (enable) {
 					wrapper.classList.remove('<?= ZBX_STYLE_DISPLAY_NONE ?>');
-					jQuery(itemSelect).multiSelect('enable');
+					jQuery(el).multiSelect('enable');
 				} else {
 					wrapper.classList.add('<?= ZBX_STYLE_DISPLAY_NONE ?>');
-					jQuery(itemSelect).multiSelect('disable');
+					jQuery(el).multiSelect('disable');
 				}
 			}
 		}
+	}
 
+	_updateMultiselectUrls() {
 		const hostSelect = document.getElementById('item_ordering_host_');
-		if (hostSelect) {
-			const wrapper = hostSelect.closest('.form-field');
-			if (wrapper) {
-				if (orderByHost) {
-					wrapper.classList.remove('<?= ZBX_STYLE_DISPLAY_NONE ?>');
-					jQuery(hostSelect).multiSelect('enable');
-				} else {
-					wrapper.classList.add('<?= ZBX_STYLE_DISPLAY_NONE ?>');
-					jQuery(hostSelect).multiSelect('disable');
-				}
-			}
-		}
+		const itemSelect = document.getElementById('host_ordering_item_');
 
-		// Atualização de URL dos Multiselects
 		if (hostSelect && itemSelect) {
-			// Verifica se o multiselect já foi inicializado pelo Zabbix
 			const $hostSelect = jQuery(hostSelect);
 			const $itemSelect = jQuery(itemSelect);
+			
+			// Verificação defensiva se o plugin multiselect existe
+			if (!$hostSelect.data('multiSelect') || !$itemSelect.data('multiSelect')) return;
 
-			// Tenta pegar a opção url de forma segura
-			let hostUrlData = $hostSelect.data('multiSelect');
-			let itemUrlData = $itemSelect.data('multiSelect');
+			const urlHost = new Curl($hostSelect.multiSelect('getOption', 'url'));
+			const urlItem = new Curl($itemSelect.multiSelect('getOption', 'url'));
+			
+			const formFields = getFormFields(this._form);
 
-			if (hostUrlData && itemUrlData && hostUrlData.options && itemUrlData.options) {
-				const urlHost = new Curl(hostUrlData.options.url);
-				const urlItem = new Curl(itemUrlData.options.url);
+			// Atualiza Group IDs
+			if (formFields.groupids) {
+				urlHost.setArgument('groupids', formFields.groupids);
+				urlItem.setArgument('groupids', formFields.groupids);
+			} else {
+				urlHost.unsetArgument('groupids');
+				urlItem.unsetArgument('groupids');
+			}
+
+			// Atualiza Host IDs
+			if (formFields.hostids) {
+				urlItem.setArgument('hostids', formFields.hostids);
+			} else {
+				urlItem.unsetArgument('hostids');
+			}
+
+			// Atualiza Items
+			if (formFields.columns) {
+				const items = [];
+				// Garante que é iterável
+				const columns = Array.isArray(formFields.columns) ? formFields.columns : Object.values(formFields.columns);
 				
-				const formFields = getFormFields(this.#form);
-
-				if (formFields.groupids !== undefined) {
-					urlHost.setArgument('groupids', formFields.groupids);
-					urlItem.setArgument('groupids', formFields.groupids);
-				} else {
-					urlHost.unsetArgument('groupids');
-					urlItem.unsetArgument('groupids');
-				}
-
-				if (formFields.hostids !== undefined) {
-					urlItem.setArgument('hostids', formFields.hostids);
-				} else {
-					urlItem.unsetArgument('hostids');
-				}
-
-				if (formFields.columns !== undefined && typeof formFields.columns === 'object') {
-					const items = [];
-					Object.values(formFields.columns).forEach((column) => {
-						if (column.items && typeof column.items === 'object') {
-							items.push(...Object.values(column.items));
-						}
-					});
+				columns.forEach(col => {
+					if (col.items) {
+						const colItems = Array.isArray(col.items) ? col.items : Object.values(col.items);
+						items.push(...colItems);
+					}
+				});
+				
+				if (items.length > 0) {
 					urlItem.setArgument('items', items);
 				} else {
 					urlItem.unsetArgument('items');
 				}
-
-				$hostSelect.multiSelect('modify', {url: urlHost.getUrl()});
-				$itemSelect.multiSelect('modify', {url: urlItem.getUrl()});
 			}
+
+			$hostSelect.multiSelect('modify', {url: urlHost.getUrl()});
+			$itemSelect.multiSelect('modify', {url: urlItem.getUrl()});
 		}
 	}
 
-	#triggerUpdate() {
-		this.#form.dispatchEvent(new CustomEvent('form_fields.changed', {detail: {}}));
-	}
-
-	#processColumnsAction(e) {
-		const target = e.target;
-		const button = target.closest('button');
+	_processColumnsAction(e) {
+		const button = e.target.closest('button');
 		if (!button) return;
 
-		const formFields = getFormFields(this.#form);
 		const action = button.getAttribute('name');
-
-		let columnPopup;
+		const formFields = getFormFields(this._form);
 
 		switch (action) {
 			case 'add':
-				columnPopup = PopUp(
-					'widget.tablemodulerme.column.edit',
-					{
-						templateid: this.#templateid,
-						groupids: formFields.groupids,
-						hostids: formFields.hostids
-					},
-					{
-						dialogueid: 'tablemodulerme-column-edit-overlay',
-						dialogue_class: 'modal-popup-generic'
-					}
-				).$dialogue[0];
-
-				columnPopup.addEventListener('dialogue.submit', (e) => {
-					const tbody = this.#list_columns.querySelector('tbody');
-					const lastRow = tbody.querySelector('tr:last-child');
-					
-					let index = 0;
-					if (lastRow && lastRow.dataset.index !== undefined) {
-						index = parseInt(lastRow.dataset.index) + 1;
-					}
-
-					const newRow = this.#makeColumnRow(e.detail, index);
-					
-					if (lastRow) {
-						lastRow.insertAdjacentElement('afterend', newRow);
-					} else {
-						tbody.appendChild(newRow);
-					}
-					
-					this.#triggerUpdate();
+				this._openColumnPopup({}, (newRow) => {
+					this._list_columns.querySelector('tbody').appendChild(newRow);
 				});
 				break;
 
 			case 'edit':
 				const row = button.closest('tr');
-				const columnIndex = row.dataset.index;
-				const columnData = formFields.columns ? formFields.columns[columnIndex] : {};
-
-				columnPopup = PopUp(
-					'widget.tablemodulerme.column.edit',
-					{
-						...columnData,
-						edit: 1,
-						templateid: this.#templateid,
-						groupids: formFields.groupids,
-						hostids: formFields.hostids
-					}, {
-						dialogueid: 'tablemodulerme-column-edit-overlay',
-						dialogue_class: 'modal-popup-generic'
-					}
-				).$dialogue[0];
-
-				columnPopup.addEventListener('dialogue.submit', (e) => {
-					const currentRow = this.#list_columns.querySelector(`tbody > tr[data-index="${columnIndex}"]`);
-					currentRow.replaceWith(this.#makeColumnRow(e.detail, columnIndex));
-					this.#triggerUpdate();
-				});
+				const index = row.dataset.index;
+				const data = formFields.columns && formFields.columns[index] ? formFields.columns[index] : {};
+				
+				this._openColumnPopup(data, (newRow) => {
+					row.replaceWith(newRow);
+				}, true);
 				break;
 
 			case 'remove':
 				button.closest('tr').remove();
-				this.#triggerUpdate();
+				this._form.dispatchEvent(new CustomEvent('form_fields.changed'));
 				break;
 		}
 	}
 
-	#makeColumnRow(data, index) {
-		const row = this.#list_column_tmpl.evaluateToElement({
+	_openColumnPopup(data, callback, isEdit = false) {
+		const formFields = getFormFields(this._form);
+		const popupParams = {
+			templateid: this._templateid,
+			groupids: formFields.groupids,
+			hostids: formFields.hostids,
+			...data
+		};
+		if (isEdit) popupParams.edit = 1;
+
+		const overlay = PopUp('widget.tablemodulerme.column.edit', popupParams, {
+			dialogueid: 'tablemodulerme-column-edit-overlay',
+			dialogue_class: 'modal-popup-generic'
+		});
+
+		overlay.$dialogue[0].addEventListener('dialogue.submit', (e) => {
+			const tbody = this._list_columns.querySelector('tbody');
+			// Calcula próximo índice com segurança
+			let nextIndex = 0;
+			const rows = tbody.querySelectorAll('tr[data-index]');
+			if (rows.length > 0) {
+				const lastIndex = parseInt(rows[rows.length - 1].dataset.index);
+				nextIndex = isNaN(lastIndex) ? 0 : lastIndex + 1;
+			}
+			
+			// Se for edição, mantém o índice original, senão usa o novo
+			const finalIndex = isEdit ? (data.index ?? nextIndex) : nextIndex;
+			
+			callback(this._makeColumnRow(e.detail, finalIndex));
+			this._form.dispatchEvent(new CustomEvent('form_fields.changed'));
+		});
+	}
+
+	_makeColumnRow(data, index) {
+		const itemsText = data.items ? (Array.isArray(data.items) ? data.items.join(', ') : Object.values(data.items).join(', ')) : '';
+		
+		const row = this._list_column_tmpl.evaluateToElement({
 			...data,
 			rowNum: index,
-			items: data.items ? Object.values(data.items).join(', ') : ''
+			items: itemsText
 		});
 
 		row.dataset.index = index;
-		const columnData = row.querySelector('.js-column-data');
+		const columnDataContainer = row.querySelector('.js-column-data');
 		
-		const addVar = (name, value) => {
+		// Helper recursivo para criar inputs hidden
+		const createHiddenInput = (name, value) => {
 			const input = document.createElement('input');
-			input.setAttribute('type', 'hidden');
-			input.setAttribute('name', name);
-			input.setAttribute('value', value);
-			columnData.append(input);
+			input.type = 'hidden';
+			input.name = name;
+			input.value = value;
+			columnDataContainer.appendChild(input);
 		};
 
-		for (const [key, value] of Object.entries(data)) {
-			if (key === 'edit') continue;
-
-			if (key === 'thresholds' && typeof value === 'object') {
-				for (const [k, v] of Object.entries(value)) {
-					addVar(`columns[${index}][thresholds][${k}][color]`, v.color);
-					addVar(`columns[${index}][thresholds][${k}][threshold]`, v.threshold);
+		const parseData = (prefix, obj) => {
+			for (const [key, value] of Object.entries(obj)) {
+				if (key === 'edit') continue;
+				
+				if (typeof value === 'object' && value !== null) {
+					parseData(`${prefix}[${key}]`, value);
+				} else {
+					createHiddenInput(`${prefix}[${key}]`, value);
 				}
-				continue;
 			}
+		};
 
-			if (key === 'highlights' && typeof value === 'object') {
-				for (const [k, v] of Object.entries(value)) {
-					addVar(`columns[${index}][highlights][${k}][color]`, v.color);
-					addVar(`columns[${index}][highlights][${k}][pattern]`, v.pattern);
-				}
-				continue;
-			}
-
-			if (key === 'items' && typeof value === 'object') {
-				for (const [k, v] of Object.entries(value)) {
-					addVar(`columns[${index}][items][${k}]`, v);
-				}
-				continue;
-			}
-
-			if (key === 'time_period' && typeof value === 'object') {
-				for (const [k, v] of Object.entries(value)) {
-					addVar(`columns[${index}][time_period][${k}]`, v);
-				}
-				continue;
-			}
-
-			if (key === 'sparkline' && typeof value === 'object') {
-				for (const [k, v] of Object.entries(value)) {
-					if (k === 'time_period' && typeof v === 'object') {
-						for (const [sk, sv] of Object.entries(v)) {
-							addVar(`columns[${index}][sparkline][time_period][${sk}]`, sv);
-						}
-					} else {
-						addVar(`columns[${index}][sparkline][${k}]`, v);
-					}
-				}
-				continue;
-			}
-
-			if (key === 'item_tags' && typeof value === 'object') {
-				for (const [k, v] of Object.entries(value)) {
-					addVar(`columns[${index}][item_tags][${k}][operator]`, v.operator);
-					addVar(`columns[${index}][item_tags][${k}][tag]`, v.tag);
-					addVar(`columns[${index}][item_tags][${k}][value]`, v.value);
-				}
-				continue;
-			}
-
-			addVar(`columns[${index}][${key}]`, value);
-		}
+		// Reconstrói a estrutura de dados nos inputs hidden
+		parseData(`columns[${index}]`, data);
 
 		return row;
 	}
