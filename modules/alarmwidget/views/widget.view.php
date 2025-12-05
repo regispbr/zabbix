@@ -87,7 +87,7 @@ if (empty($data['problems'])) {
 					$row[] = (new CCol($severity_name))
 						->addClass($severity_class)
 						->addClass('alarm-severity')
-						->setAttribute('data-sort-value', $severity); // Adiciona valor para sort
+						->setAttribute('data-sort-value', $severity);
 					break;
 					
 				case 'status':
@@ -105,11 +105,25 @@ if (empty($data['problems'])) {
 					$row[] = new CCol($problem['operational_data']);
 					break;
 					
-				// --- MUDANÇA: LÓGICA DO ACK ---
 				case 'ack':
 					$ack_col = new CCol();
-					$ack_col->addClass('alarm-ack-cell'); // Nova classe para styling
+					$ack_col->addClass('alarm-ack-cell');
 					
+					// --- MUDANÇA: Ícone de Suprimido (Olho Cortado) ---
+					if (isset($problem['suppressed']) && $problem['suppressed'] == 1) {
+						$sup_icon = (new CSpan())
+							->addClass(ZBX_ICON_EYE_OFF) // Classe nativa do Zabbix
+							->addClass('alarm-ack-icon') // Para manter o estilo
+							->setTitle(_('Suppressed'));
+						$ack_col->addItem($sup_icon);
+						
+						// Adiciona um pequeno espaço se houver Ack também
+						if ($problem['ack_count'] > 0) {
+							$ack_col->addItem(' '); 
+						}
+					}
+					// --------------------------------------------------
+
 					if ($problem['ack_count'] > 0) {
 						// Adiciona o ícone de "check"
 						$ack_icon = (new CSpan('✔'))
@@ -127,16 +141,15 @@ if (empty($data['problems'])) {
 					$ack_col->addItem($ack_button);
 					$row[] = $ack_col;
 					break;
-				// --- FIM DA MUDANÇA ---
 					
 				case 'age':
 					$row[] = (new CCol($problem['age']))
-						->setAttribute('data-sort-value', $problem['age_seconds']); // Adiciona valor para sort
+						->setAttribute('data-sort-value', $problem['age_seconds']);
 					break;
 					
 				case 'time':
 					$row[] = (new CCol($problem['time']))
-						->setAttribute('data-sort-value', $problem['clock']); // Adiciona valor para sort
+						->setAttribute('data-sort-value', $problem['clock']);
 					break;
 			}
 		}
