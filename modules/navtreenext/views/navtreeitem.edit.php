@@ -21,7 +21,7 @@
  * @var array $data
  */
 
-use Modules\navtreenext\Widget;
+use Modules\NavTreeNext\Widget;
 
 $form = (new CForm('post'))
 	->setId('widget-dialogue-form')
