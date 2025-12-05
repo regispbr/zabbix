@@ -8,7 +8,6 @@ class WidgetHostGroupStatus extends CWidget {
 	static ZBX_STYLE_CLASS = 'hostgroup-status-widget';
 
 	onInitialize() {
-		console.log('DEBUG [hostgroupstatus]: 1. onInitialize() - Widget iniciado.');
 		this._vars = {};
 		this._target.classList.remove('is-loading');
 	}
@@ -37,7 +36,6 @@ class WidgetHostGroupStatus extends CWidget {
 	}
 
 	onWidgetClick(event) {
-		console.log('%cDEBUG [hostgroupstatus]: 4. onWidgetClick() - CLIQUE DETECTADO.', 'color: #00FF00; font-weight: bold;');
 		event.preventDefault();
 		event.stopPropagation();
 
@@ -45,15 +43,11 @@ class WidgetHostGroupStatus extends CWidget {
 		const host_data = this._vars.host_data || {};
 
 		if (widget_config.enable_url_redirect && widget_config.redirect_url) {
-			console.log('DEBUG [hostgroupstatus]: 4. onWidgetClick() - Redirecionamento customizado.');
 			const target = widget_config.open_in_new_tab ? '_blank' : '_self';
 			window.open(widget_config.redirect_url, target);
 		} 
 		else {
-			console.log('DEBUG [hostgroupstatus]: 4. onWidgetClick() - Gerando URL padrão (host.view)...');
-			
 			if (!this._fields) {
-				console.error('DEBUG [hostgroupstatus]: 4. onWidgetClick() - ERRO FATAL: this._fields é INDEFINIDO.');
 				return;
 			}
 
@@ -75,15 +69,12 @@ class WidgetHostGroupStatus extends CWidget {
 				hosts.forEach(hostid => url.searchParams.append('hostids[]', hostid));
 			}
 
-			// --- MUDANÇA: SEVERIDADE ---
-			// Lê do novo array 'severities'
 			const selected_severities = this._fields.severities || [];
 			if (selected_severities.length > 0) {
 				selected_severities.forEach(sev_id => {
 					url.searchParams.append(`severities[${sev_id}]`, sev_id);
 				});
 			}
-			// --- FIM DA MUDANÇA ---
 			
 			if (show_suppressed == 1) {
 				url.searchParams.set('show_suppressed', '1');
@@ -121,24 +112,18 @@ class WidgetHostGroupStatus extends CWidget {
 		this._body.style.boxShadow = 'none';
 	}
 
-	// Esta função é usada pelo Zabbix para atualizar o widget
 	getUpdateRequestData() {
 		return {
 			...super.getUpdateRequestData(),
 			hostgroups: this._fields.hostgroups || [],
 			hosts: this._fields.hosts || [],
 			exclude_hosts: this._fields.exclude_hosts || [],
-			
-			// --- MUDANÇA: Envia o array de severities ---
 			severities: this._fields.severities || [],
-			// ------------------------------------------
-			
 			evaltype: this._fields.evaltype || 0,
 			tags: this._fields.tags || [],
 			show_acknowledged: this._fields.show_acknowledged || 0,
 			show_suppressed: this._fields.show_suppressed || 0,
 			exclude_maintenance: this._fields.exclude_maintenance || 0,
-
 			count_mode: this._fields.count_mode || 1,
 			widget_color: this._fields.widget_color || '4CAF50',
 			show_group_name: this._fields.show_group_name || 1,
