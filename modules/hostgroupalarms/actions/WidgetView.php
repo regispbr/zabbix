@@ -13,6 +13,13 @@ use Modules\HostGroupAlarms\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
+		// Define constantes de fallback caso o Zabbix não as exporte
+		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
+		if (!defined('EVENT_ACKNOWLEDGED')) define('EVENT_ACKNOWLEDGED', 1);
+		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
+		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
+		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
+
 		// 1. Coleta de Filtros
 		$hostgroups = $this->fields_values['hostgroups'] ?? [];
 		$hosts = $this->fields_values['hosts'] ?? [];
@@ -25,7 +32,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 
-		// 2. Monta Severidades
 		$severities = [];
 		$map_severity = [
 			WidgetForm::SEVERITY_NOT_CLASSIFIED => 'show_not_classified',
@@ -44,10 +50,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		$ack_status = ($show_acknowledged == 1) ? ZBX_ACK_STATUS_ALL : ZBX_ACK_STATUS_UNACK;
-
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. CHAMA A ENGINE DO WIDGET NATIVO
+		// 2. Chama Engine Nativa
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $hostgroups,
@@ -62,7 +67,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_opdata' => 0
 		], $search_limit);
 
-		// 4. Processamento
+		// 3. Processamento
 		$alarm_counts = [0=>0, 1=>0, 2=>0, 3=>0, 4=>0, 5=>0];
 		$detailed_alarms = [];
 		$total_alarms = 0;
@@ -75,14 +80,22 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if (!isset($data['triggers'][$triggerid])) continue;
 				$trigger = $data['triggers'][$triggerid];
 				
-				$host = reset($trigger['hosts']);
+				// Tenta obter o host de forma segura
+				$host = null;
+				if (!empty($trigger['hosts'])) {
+					$host = reset($trigger['hosts']);
+				}
+				
+				// Se não tiver host, pula (ou trata como unknown se preferir, mas para contagem precisa filtrar)
 				if (!$host) continue;
 
-				// Filtro: Exclude Hosts
-				if (in_array($host['hostid'], $exclude_hosts)) continue;
+				$host_id = $host['hostid'] ?? 0;
+				$host_name = $host['name'] ?? _('Unknown host');
+				$host_maintenance = $host['maintenance_status'] ?? 0;
 
-				// Filtro: Maintenance
-				if ($exclude_maintenance == 1 && $host['maintenance_status'] == 1) continue;
+				// Filtros Manuais
+				if (in_array($host_id, $exclude_hosts)) continue;
+				if ($exclude_maintenance == 1 && $host_maintenance == 1) continue;
 
 				$severity = (int)($problem['severity'] ?? 0);
 				$alarm_counts[$severity]++;
@@ -92,18 +105,27 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
-				// Dados simples e diretos para o frontend
+				// Dados seguros para o array
+				$p_name = $problem['name'] ?? _('Unknown problem');
+				$p_ack = (int)($problem['acknowledged'] ?? 0);
+				$p_sup = (int)($problem['suppressed'] ?? 0);
+				$p_eventid = $problem['eventid'] ?? 0;
+				$p_clock = $problem['clock'] ?? time();
+
+				// Usa as constantes definidas no início ou valores literais
+				$is_ack = ($p_ack == EVENT_ACKNOWLEDGED);
+				$is_suppressed = ($p_sup == ZBX_PROBLEM_SUPPRESSED);
+
 				$detailed_alarms[] = [
-					'eventid' => $problem['eventid'] ?? 0,
+					'eventid' => $p_eventid,
 					'triggerid' => $triggerid,
-					'description' => $problem['name'] ?? _('Unknown'),
+					'description' => $p_name,
 					'severity' => $severity,
 					'severity_name' => CSeverityHelper::getName($severity),
-					'host_name' => $host['name'] ?? _('Unknown'),
-					'clock' => $problem['clock'] ?? time(),
-					// Passamos o valor inteiro direto (0 ou 1)
-					'acknowledged' => (int)($problem['acknowledged'] ?? 0),
-					'suppressed' => (int)($problem['suppressed'] ?? 0)
+					'host_name' => $host_name,
+					'clock' => $p_clock,
+					'acknowledged' => $is_ack ? 1 : 0,
+					'suppressed' => $is_suppressed ? 1 : 0
 				];
 			}
 		}
@@ -115,7 +137,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return $b['severity'] - $a['severity'];
 		});
 
-		// 5. Renderização
+		// 4. Group Name
 		$group_name = '';
 		if ($this->fields_values['show_group_name'] ?? 1) {
 			if (!empty($this->fields_values['group_name_text'])) {
