@@ -5,7 +5,7 @@
 	"name": "Alarm Widget",
 	"namespace": "AlarmWidget",
 	"version": "1.0",
-	"author": "Zabbix Widget Developer",
+	"author": "Reginaldo Costa",
 	"url": "",
 	"actions": {
 		"widget.alarmwidget.view": {
