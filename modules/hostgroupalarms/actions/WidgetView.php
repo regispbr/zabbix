@@ -13,7 +13,7 @@ use Modules\HostGroupAlarms\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// Constantes de fallback
+		// Define constantes de fallback
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
@@ -51,7 +51,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$ack_status = ($show_acknowledged == 1) ? ZBX_ACK_STATUS_ALL : ZBX_ACK_STATUS_UNACK;
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 2. PARTE 1: Engine Nativa (Apenas para encontrar os problemas corretos)
+		// 2. PARTE 1: Engine Nativa (Encontra os problemas)
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $hostgroups,
@@ -66,8 +66,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_opdata' => 0
 		], $search_limit);
 
-		// 3. PARTE 2: Hidratação Robusta (A "Segunda Lógica")
-		// Coletamos todos os triggerIDs retornados pela engine nativa
+		// 3. PARTE 2: Hidratação Robusta (Host + Ack via Trigger API)
+		// Coletamos os triggerIDs para buscar dados confiáveis na API
 		$triggerIds = [];
 		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
@@ -75,30 +75,46 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// Buscamos os dados de Host EXPLICITAMENTE na API
-		// Isso garante que teremos 'name' e 'maintenance_status' sem erros.
-		$trigger_host_map = [];
+		$trigger_info_map = [];
 		if (!empty($triggerIds)) {
+			// Solicitamos Hosts E o LastEvent (onde vive o status real do Ack na lógica antiga)
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
+				'selectLastEvent' => ['acknowledged', 'suppressed'], // <-- A Chave do Sucesso
 				'preservekeys' => true
 			]);
 
 			foreach ($db_triggers as $tid => $trig) {
+				// Dados do Host
+				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
 					$first_host = reset($trig['hosts']);
-					$trigger_host_map[$tid] = [
+					$host_data = [
 						'id' => $first_host['hostid'],
 						'name' => $first_host['name'],
-						'maintenance' => (int)$first_host['maintenance_status'] // Garante inteiro
+						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
+
+				// Dados do Ack (Vindos do LastEvent, igual ao código antigo)
+				$ack_status_trigger = 0;
+				$sup_status_trigger = 0;
+				if (!empty($trig['lastEvent'])) {
+					$ack_status_trigger = (int)($trig['lastEvent']['acknowledged'] ?? 0);
+					$sup_status_trigger = (int)($trig['lastEvent']['suppressed'] ?? 0);
+				}
+
+				$trigger_info_map[$tid] = [
+					'host' => $host_data,
+					'ack' => $ack_status_trigger,
+					'sup' => $sup_status_trigger
+				];
 			}
 		}
 
-		// 4. Processamento Final (Merge das duas lógicas)
+		// 4. Processamento Final
 		$alarm_counts = [0=>0, 1=>0, 2=>0, 3=>0, 4=>0, 5=>0];
 		$detailed_alarms = [];
 		$total_alarms = 0;
@@ -108,16 +124,17 @@ class WidgetView extends CControllerDashboardWidgetView {
 			foreach ($data['problems'] as $problem) {
 				$triggerid = $problem['objectid'] ?? 0;
 				
-				// Se não conseguimos recuperar o host na nossa busca explícita, ignoramos
-				if (!isset($trigger_host_map[$triggerid])) continue;
+				// Se não temos os dados complementares, ignoramos
+				if (!isset($trigger_info_map[$triggerid])) continue;
 
-				$host_info = $trigger_host_map[$triggerid];
+				$info = $trigger_info_map[$triggerid];
+				$host_info = $info['host'];
 
-				// --- FILTROS DE HOST (Manual) ---
+				// --- FILTROS MANUAIS ---
 				// 1. Exclude Hosts
 				if (in_array($host_info['id'], $exclude_hosts)) continue;
 
-				// 2. Maintenance (Agora temos certeza que o valor existe e é int)
+				// 2. Maintenance
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
 				// Contabiliza
@@ -129,20 +146,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
-				// Dados para o Frontend
-				$p_ack = (int)($problem['acknowledged'] ?? 0);
-				$p_sup = (int)($problem['suppressed'] ?? 0);
-
+				// --- DADOS PARA O FRONTEND ---
+				// Usamos os dados que acabamos de buscar na API de Trigger (confiáveis)
+				
 				$detailed_alarms[] = [
 					'eventid' => $problem['eventid'],
 					'triggerid' => $triggerid,
 					'description' => $problem['name'],
 					'severity' => $severity,
 					'severity_name' => CSeverityHelper::getName($severity),
-					'host_name' => $host_info['name'], // Nome garantido pela nossa busca API
+					'host_name' => $host_info['name'],
 					'clock' => $problem['clock'],
-					'acknowledged' => $p_ack,
-					'suppressed' => $p_sup
+					'acknowledged' => $info['ack'], // Ack vindo do lastEvent
+					'suppressed' => $info['sup']    // Suppressed vindo do lastEvent
 				];
 			}
 		}
