@@ -31,21 +31,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 
-		$severities = [];
-		$map_severity = [
-			WidgetForm::SEVERITY_NOT_CLASSIFIED => 'show_not_classified',
-			WidgetForm::SEVERITY_INFORMATION => 'show_information',
-			WidgetForm::SEVERITY_WARNING => 'show_warning',
-			WidgetForm::SEVERITY_AVERAGE => 'show_average',
-			WidgetForm::SEVERITY_HIGH => 'show_high',
-			WidgetForm::SEVERITY_DISASTER => 'show_disaster'
-		];
-
-		foreach ($map_severity as $sev_code => $field_name) {
-			if (!empty($this->fields_values[$field_name])) {
-				$severities[] = $sev_code;
-			}
-		}
+		// --- MUDANÇA: SEVERIDADE ---
+		// Agora pegamos o array direto do campo 'severities'
+		$severities = $this->fields_values['severities'] ?? []; 
+		// --- FIM DA MUDANÇA ---
 
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		$ack_status = ($show_acknowledged == 1) ? ZBX_ACK_STATUS_ALL : ZBX_ACK_STATUS_UNACK;
@@ -57,7 +46,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'groupids' => $hostgroups,
 			'hostids' => $hosts,
 			'name' => '',
-			'severities' => $severities,
+			'severities' => $severities, // Passa o array direto
 			'evaltype' => $evaltype,
 			'tags' => $tags,
 			'show_symptoms' => false,
@@ -67,7 +56,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		], $search_limit);
 
 		// 3. PARTE 2: Hidratação Robusta (Host + Ack via Trigger API)
-		// Coletamos os triggerIDs para buscar dados confiáveis na API
 		$triggerIds = [];
 		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
@@ -77,17 +65,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$trigger_info_map = [];
 		if (!empty($triggerIds)) {
-			// Solicitamos Hosts E o LastEvent (onde vive o status real do Ack na lógica antiga)
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'selectLastEvent' => ['acknowledged', 'suppressed'], // <-- A Chave do Sucesso
+				'selectLastEvent' => ['acknowledged', 'suppressed'],
 				'preservekeys' => true
 			]);
 
 			foreach ($db_triggers as $tid => $trig) {
-				// Dados do Host
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
 					$first_host = reset($trig['hosts']);
@@ -98,7 +84,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
-				// Dados do Ack (Vindos do LastEvent, igual ao código antigo)
 				$ack_status_trigger = 0;
 				$sup_status_trigger = 0;
 				if (!empty($trig['lastEvent'])) {
@@ -124,17 +109,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 			foreach ($data['problems'] as $problem) {
 				$triggerid = $problem['objectid'] ?? 0;
 				
-				// Se não temos os dados complementares, ignoramos
 				if (!isset($trigger_info_map[$triggerid])) continue;
 
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
-				// --- FILTROS MANUAIS ---
-				// 1. Exclude Hosts
+				// Filtros Manuais
 				if (in_array($host_info['id'], $exclude_hosts)) continue;
-
-				// 2. Maintenance
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
 				// Contabiliza
@@ -146,9 +127,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
-				// --- DADOS PARA O FRONTEND ---
-				// Usamos os dados que acabamos de buscar na API de Trigger (confiáveis)
-				
+				// Dados
+				$p_ack = (int)($problem['acknowledged'] ?? 0);
+				$p_sup = (int)($problem['suppressed'] ?? 0);
+
 				$detailed_alarms[] = [
 					'eventid' => $problem['eventid'],
 					'triggerid' => $triggerid,
