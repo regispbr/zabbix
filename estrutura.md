@@ -2,7 +2,7 @@
 - Define Cliente e Local
    - NAV BRASIL/SP/DNGR/CPD
  # TAGs
-   -  Tags de Host
+### Tags de Host
     - TYPE = Tipo de Equipamento Switch, Link, Serviço, Firewall, Roteador, Acess Point
     - HOST TYPE = SERVICE, INFRASTRUCTURE , EXTERN
     - PROVIDER = Fornecedor 
@@ -15,7 +15,7 @@
     - ABREVIATION = SIGLA
     - NOTE = NOTAS OU OBSERVAÇÃO
 
- # Tags de Triggers
+ ### Tags de Triggers
     - INCIDENT = ERROR, PERFORMANCE, AVAILABILITY
     - NOTE = NOTAS OU OBSERVAÇÃO
  
