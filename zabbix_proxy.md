@@ -1,4 +1,9 @@
-IP Puplico : 177.69.152.45
+## DAdos para Clientes
+Server=zbx.ziva.com.br
+Hostname=TJMG-ZBX-PROXY-ZIVA
+
+Obs:
+IP Puplico : 177.69.152.45(zbx.ziva.com.br)
 
 
 ## Gerar Chave PSK
