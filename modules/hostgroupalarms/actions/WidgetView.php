@@ -5,14 +5,15 @@ namespace Modules\HostGroupAlarms\Actions;
 use API;
 use CControllerDashboardWidgetView;
 use CControllerResponseData;
-use CScreenProblem; // <--- A CLASSE DO WIDGET NATIVO
-use CSettingsHelper;
+use CScreenProblem;
+use CSettingsHelper; // <--- Importante
+use CSeverityHelper; // <--- Adicionado para evitar erro de classe não encontrada
 use Modules\HostGroupAlarms\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// 1. Coleta de Filtros Básicos
+		// 1. Coleta de Filtros
 		$hostgroups = $this->fields_values['hostgroups'] ?? [];
 		$hosts = $this->fields_values['hosts'] ?? [];
 		$exclude_hosts = $this->fields_values['exclude_hosts'] ?? [];
@@ -24,9 +25,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 
-		// 2. Monta Array de Severidades (Igual ao nativo)
+		// 2. Monta Severidades
 		$severities = [];
-		// Mapeia os checkboxes individuais para um array de inteiros
 		$map_severity = [
 			WidgetForm::SEVERITY_NOT_CLASSIFIED => 'show_not_classified',
 			WidgetForm::SEVERITY_INFORMATION => 'show_information',
@@ -42,36 +42,29 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 3. Define "Show" mode (Recent vs Problems)
-		// O nativo usa TRIGGERS_OPTION_RECENT_PROBLEM por padrão. Vamos usar esse.
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
-
-		// 4. Configura Acknowledgement Status para o CScreenProblem
-		// Se checkbox marcado (1) -> Mostra Tudo (ACK + UNACK). 
-		// Se desmarcado (0) -> Mostra Só UNACK.
 		$ack_status = ($show_acknowledged == 1) ? ZBX_ACK_STATUS_ALL : ZBX_ACK_STATUS_UNACK;
 
-		// 5. CHAMA A ENGINE DO WIDGET NATIVO
-		// Isso garante que a busca seja idêntica à tela "Problems"
+		// --- CORREÇÃO: Pega o limite de busca do Zabbix ---
+		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
+		// --------------------------------------------------
+
+		// 3. CHAMA A ENGINE (Corrigido: Passando search_limit)
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $hostgroups,
 			'hostids' => $hosts,
-			'name' => '', // Filtro de nome de problema (vazio)
+			'name' => '',
 			'severities' => $severities,
 			'evaltype' => $evaltype,
 			'tags' => $tags,
-			'show_symptoms' => false, // Nativo padrão é false (esconde sintomas)
+			'show_symptoms' => false,
 			'show_suppressed' => ($show_suppressed == 1),
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 // Não precisamos de opdata para contagem
-		]);
+			'show_opdata' => 0
+		], $search_limit); // <--- Segundo argumento adicionado
 
-		// O $data retornado contém ['problems' => [], 'triggers' => []]
-
-		// 6. Processamento Final (Contagem e Filtros Manuais)
-		// O CScreenProblem traz os dados, agora aplicamos filtros que o HostGroupAlarms tem a mais (Ex: Manutenção/Exclude Hosts)
-		
+		// 4. Processamento
 		$alarm_counts = [0=>0, 1=>0, 2=>0, 3=>0, 4=>0, 5=>0];
 		$detailed_alarms = [];
 		$total_alarms = 0;
@@ -81,28 +74,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 			foreach ($data['problems'] as $problem) {
 				$triggerid = $problem['objectid'];
 				
-				// A trigger correspondente vem no array 'triggers'
-				if (!isset($data['triggers'][$triggerid])) {
-					continue;
-				}
+				if (!isset($data['triggers'][$triggerid])) continue;
 				$trigger = $data['triggers'][$triggerid];
 				
-				// Pega o primeiro host (igual lógica nativa)
 				$host = reset($trigger['hosts']);
 				if (!$host) continue;
 
-				// --- FILTRO: Exclude Hosts ---
-				if (in_array($host['hostid'], $exclude_hosts)) {
-					continue;
-				}
+				if (in_array($host['hostid'], $exclude_hosts)) continue;
 
-				// --- FILTRO: Maintenance ---
-				// status 1 = Em manutenção. Se filtro ativado (1), removemos.
-				if ($exclude_maintenance == 1 && $host['maintenance_status'] == 1) {
-					continue;
-				}
+				if ($exclude_maintenance == 1 && $host['maintenance_status'] == 1) continue;
 
-				// Se passou, conta
 				$severity = (int)$problem['severity'];
 				$alarm_counts[$severity]++;
 				$total_alarms++;
@@ -111,7 +92,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$highest_severity = $severity;
 				}
 
-				// Dados para o Tooltip/Lista
 				$detailed_alarms[] = [
 					'eventid' => $problem['eventid'],
 					'triggerid' => $triggerid,
@@ -126,7 +106,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// Ordenação por Severidade (Desc) depois Data
 		usort($detailed_alarms, function($a, $b) {
 			if ($a['severity'] === $b['severity']) {
 				return $b['clock'] - $a['clock'];
@@ -134,7 +113,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return $b['severity'] - $a['severity'];
 		});
 
-		// 7. Renderização (Group Name, Cores, etc)
+		// 5. Renderização
 		$group_name = '';
 		if ($this->fields_values['show_group_name'] ?? 1) {
 			if (!empty($this->fields_values['group_name_text'])) {
@@ -158,7 +137,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'detailed_alarms' => $detailed_alarms,
 			'background_color' => $this->getSeverityColor($highest_severity),
 			'text_color' => $this->getTextColor($highest_severity),
-			// Passagem de estilos e configs
 			'font_size' => $this->fields_values['font_size'] ?? 14,
 			'font_family' => $this->fields_values['font_family'] ?? 'Arial, sans-serif',
 			'show_border' => $this->fields_values['show_border'] ?? 1,
@@ -177,7 +155,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$this->setResponse(new CControllerResponseData($response_data));
 	}
 
-	// Helpers de Cor (Mantidos)
 	private function getSeverityColor(int $severity): string {
 		$colors = [-1=>'#66BB6A', 0=>'#97AAB3', 1=>'#7499FF', 2=>'#FFC859', 3=>'#FFA059', 4=>'#E97659', 5=>'#E45959'];
 		return $colors[$severity] ?? $colors[-1];
