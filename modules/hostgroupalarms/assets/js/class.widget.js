@@ -1,21 +1,7 @@
 /*
 ** Zabbix
 ** Copyright (C) 2001-2023 Zabbix SIA
-**
-** This program is free software; you can redistribute it and/or modify
-** it under the terms of the GNU General Public License as published by
-** the Free Software Foundation; either version 2 of the License, or
-** (at your option) any later version.
-**
-** This program is distributed in the hope that it will be useful,
-** but WITHOUT ANY WARRANTY; without even the implied warranty of
-** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-** GNU General Public License for more details.
-**
-** You should have received a copy of the GNU General Public License
-** along with this program; if not, write to the Free Software
-** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-**/
+*/
 
 class WidgetHostGroupAlarms extends CWidget {
 
@@ -25,18 +11,15 @@ class WidgetHostGroupAlarms extends CWidget {
         this._vars = {};
         this._body = this._target.querySelector('.hostgroup-alarms-container');
         this._tooltip = null;
-        this._hide_timer = null; // Timer para a nova feature de hover
+        this._hide_timer = null;
         this.setContainerSize();
         
-        // Remove loader immediately after initialization
         this._target.classList.remove('is-loading');
 
-        // Add click handler for drill-down functionality
         if (this._body !== null) {
             this._body.addEventListener('click', this.onWidgetClick.bind(this));
             this._body.style.cursor = 'pointer';
             
-            // Add hover handlers for tooltip
             this._body.addEventListener('mouseenter', this.onMouseEnter.bind(this));
             this._body.addEventListener('mouseleave', this.onMouseLeave.bind(this));
         }
@@ -47,17 +30,13 @@ class WidgetHostGroupAlarms extends CWidget {
     }
 
     setContainerSize() {
-        // Ensure the widget maintains a card-like aspect ratio
         if (this._body !== null && this._content_body) {
             const rect = this._content_body.getBoundingClientRect();
-            // --- CORREÇÃO (Do Arquivo 1): Verifica se _fields existe antes de ler ---
             const padding = (this._fields && this._fields.padding) ? parseInt(this._fields.padding, 10) : 10;
 
-            // Calculate available space
             const available_height = rect.height - (padding * 2);
             const available_width = rect.width - (padding * 2);
 
-            // Set minimum dimensions for card-like appearance
             const min_height = 120;
             const min_width = 160;
 
@@ -70,52 +49,41 @@ class WidgetHostGroupAlarms extends CWidget {
         }
     }
 
-    // ----- FUNÇÃO onWidgetClick ATUALIZADA COM A FEATURE DE MANUTENÇÃO -----
     onWidgetClick(event) {
-        // Prevent default action and stop propagation
         event.preventDefault();
         event.stopPropagation();
 
         const widget_config = this._vars.widget_config || {}; 
         const alarm_data = this._vars.alarm_data || {};
 
-        // Check if custom URL redirect is enabled (lógica do seu gestor)
         if (widget_config.enable_url_redirect && widget_config.redirect_url) {
             const target = widget_config.open_in_new_tab ? '_blank' : '_self';
             window.open(widget_config.redirect_url, target);
         } 
         else if (alarm_data.total_alarms > 0) {
-            
-            // 1. Pega os filtros do widget
             const hostgroups = this._fields.hostgroups || [];
             const hosts = this._fields.hosts || [];
             const tags = this._fields.tags || [];
             const evaltype = this._fields.evaltype || 0;
             const show_acknowledged = this._fields.show_acknowledged || 0;
             const show_suppressed = this._fields.show_suppressed || 0;
-            
-            // --- INÍCIO DA MUDANÇA (Baseado no Arquivo 1) ---
             const exclude_maintenance = this._fields.exclude_maintenance || 0;
-            // --- FIM DA MUDANÇA ---
             
-            // 2. Cria a URL base
             const url = new URL('zabbix.php', window.location.origin);
             url.searchParams.set('action', 'problem.view');
-            url.searchParams.set('filter_set', '1'); // Ativa o filtro
+            url.searchParams.set('filter_set', '1');
 
-            // 3. Adiciona Grupos e Hosts (Corrigido)
             if (hostgroups.length > 0) {
                 hostgroups.forEach(groupid => {
-                    url.searchParams.append('groupids[]', groupid); // <-- CORRIGIDO
+                    url.searchParams.append('groupids[]', groupid);
                 });
             }
             if (hosts.length > 0) {
                 hosts.forEach(hostid => {
-                    url.searchParams.append('hostids[]', hostid); // <-- CORRIGIDO
+                    url.searchParams.append('hostids[]', hostid);
                 });
             }
 
-            // 4. Adiciona Severidades (Baseado nas URLs de exemplo)
             const severities_map = {
                 'show_not_classified': 0,
                 'show_information': 1,
@@ -136,16 +104,15 @@ class WidgetHostGroupAlarms extends CWidget {
             if (!all_severities_checked) {
                 for (const [key, severity_id] of Object.entries(severities_map)) {
                     if (this._fields[key] == 1 || this._fields[key] == true) { 
-                        url.searchParams.append(`severities[${severity_id}]`, severity_id); // <-- CORRIGIDO
+                        url.searchParams.append(`severities[${severity_id}]`, severity_id);
                     }
                 }
             }
 
-            // 5. Adiciona Filtros de Problema
             if (show_acknowledged == 0) {
-                url.searchParams.set('acknowledgement_status', '1'); // 1 = Unacknowledged
+                url.searchParams.set('acknowledgement_status', '1');
             } else {
-                url.searchParams.set('acknowledgement_status', '0'); // 0 = All
+                url.searchParams.set('acknowledgement_status', '0');
             }
             
             if (show_suppressed == 1) {
@@ -154,16 +121,12 @@ class WidgetHostGroupAlarms extends CWidget {
                 url.searchParams.set('show_suppressed', '0');
             }
             
-            // --- INÍCIO DA MUDANÇA (Baseado no Arquivo 1) ---
-            // A tela de "Problems" usa 'maintenance_status' (0=Não mostrar, 1=Mostrar)
             if (exclude_maintenance == 1) {
-                url.searchParams.set('maintenance_status', '0'); // 0 = Don't show maintenance
+                url.searchParams.set('maintenance_status', '0');
             } else {
-                url.searchParams.set('maintenance_status', '1'); // 1 = Show maintenance
+                url.searchParams.set('maintenance_status', '1');
             }
-            // --- FIM DA MUDANÇA ---
 
-            // 6. Adiciona Tags
             if (tags.length > 0) {
                 tags.forEach((tag, index) => {
                     url.searchParams.append(`tags[${index}][tag]`, tag.tag);
@@ -173,11 +136,9 @@ class WidgetHostGroupAlarms extends CWidget {
                 url.searchParams.set('evaltype', evaltype);
             }
 
-            // 7. Abre a nova URL
             window.open(url.toString(), '_blank');
         }
     }
-    // ----- FIM DA ATUALIZAÇÃO -----
 
     onMouseEnter(event) {
         if (this._hide_timer) {
@@ -188,26 +149,23 @@ class WidgetHostGroupAlarms extends CWidget {
         const widget_config = this._vars.widget_config || {};
         const alarm_data = this._vars.alarm_data || {};
         
-        // Add hover effect
         this._body.style.transform = 'scale(1.02)';
         this._body.style.transition = 'transform 0.2s ease';
         this._body.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
 
-        // Show detailed tooltip if enabled and there are alarms
         if (widget_config.show_detailed_tooltip && alarm_data.total_alarms > 0) {
             this.showDetailedTooltip();
         }
     }
 
     onMouseLeave(event) {
-        // Remove hover effect
         this._body.style.transform = 'scale(1)';
         this._body.style.boxShadow = 'none';
 
         if (this._hide_timer) {
             clearTimeout(this._hide_timer);
         }
-        this._hide_timer = setTimeout(this.hideTooltip.bind(this), 400); // 300ms de delay
+        this._hide_timer = setTimeout(this.hideTooltip.bind(this), 400);
     }
 
     showDetailedTooltip() {
@@ -223,27 +181,20 @@ class WidgetHostGroupAlarms extends CWidget {
             return;
         }
 
-        // Create tooltip element
         this._tooltip = document.createElement('div');
         this._tooltip.className = 'hostgroup-alarms-tooltip';
         
-        // ----- MUDANÇA AQUI -----
-        // Verifica o tema do Zabbix e adiciona a classe correta
         if (document.body.classList.contains('theme-dark')) {
             this._tooltip.classList.add('dark-mode-tooltip');
         }
-        // ----- FIM DA MUDANÇA -----
         
         this._tooltip.innerHTML = this.buildTooltipContent(detailed_alarms, max_items);
-
 
         this._tooltip.addEventListener('mouseenter', this.onTooltipEnter.bind(this));
         this._tooltip.addEventListener('mouseleave', this.onTooltipLeave.bind(this));
 
-
-        // Position tooltip
         document.body.appendChild(this._tooltip);
-        this.positionTooltip(); // Posição fixa
+        this.positionTooltip();
     }
 
     onTooltipEnter() {
@@ -260,7 +211,6 @@ class WidgetHostGroupAlarms extends CWidget {
         this.hideTooltip();
     }
 
-    // Esta é a função buildTooltipContent do CÓDIGO 2 (Base)
     buildTooltipContent(alarms, max_items) {
         const displayed_alarms = alarms.slice(0, max_items);
         const severity_colors = {
@@ -277,8 +227,13 @@ class WidgetHostGroupAlarms extends CWidget {
         displayed_alarms.forEach(alarm => {
             const time_formatted = new Date(alarm.clock * 1000).toLocaleString();
             const severity_color = severity_colors[alarm.severity] || '#97AAB3';
-            const ack_status = alarm.acknowledged ? 'Acknowledged' : 'Not acknowledged';
-            const ack_class = alarm.acknowledged ? 'acknowledged' : 'not-acknowledged';
+            
+            // --- CORREÇÃO: Status de Reconhecimento ---
+            // Verifica explicitamente se é 1 (int) ou '1' (string)
+            const is_ack = (alarm.acknowledged == 1);
+            
+            const ack_status = is_ack ? 'Acknowledged' : 'Not acknowledged';
+            const ack_class = is_ack ? 'acknowledged' : 'not-acknowledged';
 
             html += '<div class="tooltip-item" style="border-left: 4px solid ' + severity_color + ';">';
             html += '<div class="tooltip-time">' + time_formatted + '</div>';
@@ -291,10 +246,9 @@ class WidgetHostGroupAlarms extends CWidget {
             
             if (alarm.eventid) {
                 html += '<div class="tooltip-actions">';
-                html += '<a href="tr_events.php?triggerid=' + alarm.triggerid + '&eventid=' + alarm.eventid + '" target="_blank">View Event</a>';
-                if (!alarm.acknowledged) {
-                    html += ' | <a href="acknow.php?eventid=' + alarm.eventid + '" target="_blank">Acknowledge</a>';
-                }
+                // --- CORREÇÃO: Link para Update/Acknowledge Nativo ---
+                // Chama a função global acknowledgePopUp do Zabbix
+                html += '<a href="javascript:void(0)" onclick="acknowledgePopUp({eventids: [\'' + alarm.eventid + '\']}); return false;">Update</a>';
                 html += '</div>';
             }
             
@@ -342,7 +296,6 @@ class WidgetHostGroupAlarms extends CWidget {
             this._hide_timer = null;
         }
 
-        // Remove o tooltip
         if (this._tooltip) {
             if (this._tooltip.parentNode === document.body) {
                 document.body.removeChild(this._tooltip);
@@ -357,25 +310,17 @@ class WidgetHostGroupAlarms extends CWidget {
         return div.innerHTML;
     }
 
-    // ----- FUNÇÃO getUpdateRequestData ATUALIZADA COM A FEATURE DE MANUTENÇÃO -----
     getUpdateRequestData() {
         return {
             ...super.getUpdateRequestData(),
             hostgroups: this._fields.hostgroups || [],
             hosts: this._fields.hosts || [],
-            
-            // --- NOVOS CAMPOS ADICIONADOS ---
             exclude_hosts: this._fields.exclude_hosts || [],
             evaltype: this._fields.evaltype || 0,
             tags: this._fields.tags || [],
             show_acknowledged: this._fields.show_acknowledged || 0,
             show_suppressed: this._fields.show_suppressed || 0,
-            
-            // --- INÍCIO DA MUDANÇA (Baseado no Arquivo 1) ---
             exclude_maintenance: this._fields.exclude_maintenance || 0,
-            // --- FIM DA MUDANÇA ---
-            // ------------------------------
-
             show_group_name: this._fields.show_group_name || 1,
             group_name_text: this._fields.group_name_text || '',
             enable_url_redirect: this._fields.enable_url_redirect || 0,
@@ -409,22 +354,14 @@ class WidgetHostGroupAlarms extends CWidget {
 
         super.setContents(response);
 
-        // Remove loader after content is set
         this._target.classList.remove('is-loading');
 
-        // ----- INÍCIO DA CORREÇÃO (ADIÇÃO NECESSÁRIA PARA O FILTRO) -----
-        // Armazena os fields_values para a URL
         if (response.fields_values) {
             this._fields = response.fields_values;
         }
-        // ----- FIM DA CORREÇÃO -----
 
-        // --- CORREÇÃO DE BUG (Do Arquivo 1): Chama o resize DEPOIS de setar this._fields ---
-        // Update the display after content change
         this.setContainerSize();
-        // --- FIM DA CORREÇÃO ---
 
-        // Update alarm data and widget config
         if (response.alarm_data) {
             this._vars.alarm_data = response.alarm_data;
         }
@@ -432,7 +369,6 @@ class WidgetHostGroupAlarms extends CWidget {
             this._vars.widget_config = response.widget_config;
         }
 
-        // Re-initialize body element and event listeners
         if (this._body) {
             this._body.removeEventListener('click', this.onWidgetClick.bind(this));
             this._body.removeEventListener('mouseenter', this.onMouseEnter.bind(this));
@@ -452,7 +388,6 @@ class WidgetHostGroupAlarms extends CWidget {
         return false;
     }
 
-    // Esta é a função getRefreshInterval do CÓDIGO 2 (Base)
     getRefreshInterval() {
         return 30;
     }
