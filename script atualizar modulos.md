@@ -39,7 +39,7 @@ done
 
 # 2º Dar permissão de execução 
 ~~~bash
-nano chmod +x /opt/sync_modules.sh
+chmod +x /opt/sync_modules.sh
 ~~~
 # 3º realizar o clone do git
 git clone https://github.com/regispbr/zabbix.git /opt/zabbix-github
