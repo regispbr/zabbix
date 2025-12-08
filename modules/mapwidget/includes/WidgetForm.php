@@ -13,7 +13,7 @@ use Zabbix\Widgets\Fields\{
 	CWidgetFieldMultiSelectGroup,
 	CWidgetFieldMultiSelectHost,
 	CWidgetFieldRadioButtonList,
-	CWidgetFieldSeverities, // <-- Importante
+	CWidgetFieldSeverities,
 	CWidgetFieldTags,
 	CWidgetFieldTextBox
 };
@@ -103,8 +103,7 @@ class WidgetForm extends CWidgetForm {
 				->setFlags(CWidgetField::FLAG_NOT_EMPTY)
 		);
 
-		// --- MUDANÇA: SEVERIDADE ---
-		// Substitui os checkboxes individuais por um campo Severities
+		// Severities
 		$this->addField(
 			(new CWidgetFieldSeverities('severities', _('Severity')))
 				->setDefault([
@@ -116,7 +115,6 @@ class WidgetForm extends CWidgetForm {
 					TRIGGER_SEVERITY_DISASTER
 				])
 		);
-		// --- FIM DA MUDANÇA ---
 
 		$this->addField(
 			(new CWidgetFieldCheckBox('show_acknowledged', _('Show acknowledged problems')))
@@ -127,6 +125,13 @@ class WidgetForm extends CWidgetForm {
 			(new CWidgetFieldCheckBox('show_suppressed', _('Show suppressed problems')))
 				->setDefault(0)
 		);
+		
+		// --- NOVO CAMPO ---
+		$this->addField(
+			(new CWidgetFieldCheckBox('show_suppressed_only', _('Show ONLY suppressed')))
+				->setDefault(0)
+		);
+		// ------------------
 
 		$this->addField(
 			(new CWidgetFieldCheckBox('exclude_maintenance', _('Exclude hosts in maintenance')))
