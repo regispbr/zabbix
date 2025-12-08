@@ -12,23 +12,20 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// --- DEBUG INICIAL ---
-		$start_time = microtime(true);
-		error_log("DEBUG ALARM [START]: Processando requisição...");
-
-		// Constantes
+		// Constantes de fallback
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
 		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
 
-		// 1. Inputs
+		// 1. Coleta de Filtros
 		$groupids = $this->fields_values['groupids'] ?? [];
 		$hostids = $this->fields_values['hostids'] ?? [];
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
 		$severities = $this->fields_values['severities'] ?? [];
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
+		
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 		
@@ -39,10 +36,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		
+		// Se "Only" estiver marcado, forçamos a engine a trazer os suprimidos
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
+
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
-		// Colunas
+		// Configuração de Colunas
 		$show_columns = [];
 		if (!empty($this->fields_values['show_column_host'])) $show_columns[] = 'host';
 		if (!empty($this->fields_values['show_column_severity'])) $show_columns[] = 'severity';
@@ -57,29 +56,18 @@ class WidgetView extends CControllerDashboardWidgetView {
 		}
 
 		// 2. Mapeamento de Filtros
-		// --- DEBUG FILTRO ---
-		error_log("DEBUG ALARM: Status selecionado no form: " . $problem_status_input . " (1=Prob, 2=Resolv, 0=All)");
-
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-			$show_mode = TRIGGERS_OPTION_ALL; // Tenta pegar histórico
-		}
-		
-		error_log("DEBUG ALARM: Engine Show Mode definido para: " . $show_mode . " (1=Recent/Prob, 2=All/Hist)");
+			$show_mode = TRIGGERS_OPTION_ALL; 
+		} 
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
 		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK;
 
-		// AQUI PODE SER O GARGALO: Search Limit vs Show Lines
-		// O Search Limit do Zabbix costuma ser 1000. Se seus últimos 1000 eventos forem Problems, e você procura Resolved, não vai achar nada.
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
-		error_log("DEBUG ALARM: Search limit global: $search_limit | Show Lines: $show_lines");
 
 		// 3. Chamada à Engine Nativa
-		error_log("DEBUG ALARM: Chamando CScreenProblem::getData...");
-		$api_start = microtime(true);
-		
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -93,29 +81,18 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'acknowledgement_status' => $ack_status,
 			'show_opdata' => 0
 		], $search_limit);
-		
-		$api_duration = microtime(true) - $api_start;
-		error_log("DEBUG ALARM: CScreenProblem::getData levou " . round($api_duration, 4) . " segundos.");
 
 		// Coleta de IDs
 		$triggerIds = [];
 		$eventIds = [];
-		
-		$raw_count = !empty($data['problems']) ? count($data['problems']) : 0;
-		error_log("DEBUG ALARM: Engine retornou $raw_count problemas brutos.");
-
-		if ($raw_count > 0) {
-			// Logar o primeiro item para ver se tem r_eventid
-			$first = reset($data['problems']);
-			error_log("DEBUG ALARM: Exemplo do item [0]: eventid=" . $first['eventid'] . ", r_eventid=" . ($first['r_eventid'] ?? 'NULL'));
-			
+		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
 				$triggerIds[] = $problem['objectid'];
 				$eventIds[] = $problem['eventid'];
 			}
 		}
 
-		// 4. Hidratação 1: Status Real
+		// 4. Hidratação 1: Status Real do Evento (Problem API)
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -132,7 +109,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Hidratação 2: Trigger
+		// 5. Hidratação 2: Dados do Host e OpData (Trigger API)
 		$trigger_info_map = [];
 		if (!empty($triggerIds)) {
 			$db_triggers = API::Trigger()->get([
@@ -160,23 +137,21 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 6. Construção Final e Filtragem PHP
+		// 6. Construção Final
 		$problems_final = [];
-		$filtered_stats = ['total_checked' => 0, 'skipped_status' => 0, 'skipped_sup_only' => 0, 'kept' => 0];
 
 		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
-				$filtered_stats['total_checked']++;
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
+				// Recupera status seguro do mapa de eventos
 				$status_info = $event_status_map[$eventid] ?? ['sup' => 0, 'ack' => 0];
 				$p_sup = $status_info['sup'];
 				$p_ack = $status_info['ack'];
 
-				// Filtro Only Suppressed
+				// --- FILTRO ONLY SUPPRESSED ---
 				if ($show_suppressed_only == 1 && $p_sup == 0) {
-					$filtered_stats['skipped_sup_only']++;
 					continue; 
 				}
 
@@ -184,34 +159,24 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
+				// Filtros de Host
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
 				$r_eventid = $problem['r_eventid'] ?? 0;
-				
-				// --- DEBUG DE FILTRO DE STATUS ---
-				// Problem Status
-				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-					if ($r_eventid == 0) {
-						// Queremos resolvido, mas este é ativo (r_eventid 0)
-						$filtered_stats['skipped_status']++;
-						continue; 
-					}
-				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
-					if ($r_eventid != 0) {
-						// Queremos ativo, mas este é resolvido
-						$filtered_stats['skipped_status']++;
-						continue; 
-					}
-				}
-
 				$clock = $problem['clock'] ?? time();
 				$severity = (int)($problem['severity'] ?? 0);
 				$name = $problem['name'] ?? _('Unknown problem');
+
+				// Filtro Problem Status
+				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+					if ($r_eventid == 0) continue; 
+				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
+					if ($r_eventid != 0) continue; 
+				}
+
 				$age_seconds = time() - $clock;
 				
-				$filtered_stats['kept']++;
-
 				$problems_final[] = [
 					'eventid' => $eventid,
 					'objectid' => $triggerid,
@@ -224,14 +189,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
+					
 					'ack_count' => $p_ack,
 					'suppressed' => $p_sup, 
 					'operational_data' => $info['opdata']
 				];
 			}
 		}
-
-		error_log("DEBUG ALARM: Estatísticas de Filtragem: " . print_r($filtered_stats, true));
 
 		// 7. Ordenação
 		$sort_by_map = [
@@ -258,7 +222,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		});
 
 		$problems_final = array_slice($problems_final, 0, $show_lines);
-		error_log("DEBUG ALARM [END]: Retornando " . count($problems_final) . " itens.");
 
 		$response_data = [
 			'name' => $this->getInput('name', $this->widget->getName()),
