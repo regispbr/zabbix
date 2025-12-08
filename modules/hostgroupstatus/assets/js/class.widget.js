@@ -20,18 +20,13 @@ class WidgetHostGroupStatus extends CWidget {
 		if (this._body !== null && this._content_body) {
 			const rect = this._content_body.getBoundingClientRect();
 			const padding = (this._fields && this._fields.padding) ? parseInt(this._fields.padding, 10) : 10;
-
 			const available_height = rect.height - (padding * 2);
 			const available_width = rect.width - (padding * 2);
 			const min_height = 120;
 			const min_width = 160;
 
-			if (available_height > 0) {
-				this._body.style.height = Math.max(available_height, min_height) + 'px';
-			}
-			if (available_width > 0) {
-				this._body.style.width = Math.max(available_width, min_width) + 'px';
-			}
+			if (available_height > 0) this._body.style.height = Math.max(available_height, min_height) + 'px';
+			if (available_width > 0) this._body.style.width = Math.max(available_width, min_width) + 'px';
 		}
 	}
 
@@ -40,53 +35,42 @@ class WidgetHostGroupStatus extends CWidget {
 		event.stopPropagation();
 
 		const widget_config = this._vars.widget_config || {}; 
-		const host_data = this._vars.host_data || {};
 
 		if (widget_config.enable_url_redirect && widget_config.redirect_url) {
 			const target = widget_config.open_in_new_tab ? '_blank' : '_self';
 			window.open(widget_config.redirect_url, target);
 		} 
 		else {
-			if (!this._fields) {
-				return;
-			}
+			if (!this._fields) return;
 
 			const hostgroups = this._fields.hostgroups || [];
 			const hosts = this._fields.hosts || [];
 			const tags = this._fields.tags || [];
 			const evaltype = this._fields.evaltype || 0;
 			const show_suppressed = this._fields.show_suppressed || 0;
+			const show_suppressed_only = this._fields.show_suppressed_only || 0;
 			const exclude_maintenance = this._fields.exclude_maintenance || 0;
 			
 			const url = new URL('zabbix.php', window.location.origin);
 			url.searchParams.set('action', 'host.view');
 			url.searchParams.set('filter_set', '1');
 
-			if (hostgroups.length > 0) {
-				hostgroups.forEach(groupid => url.searchParams.append('groupids[]', groupid));
-			}
-			if (hosts.length > 0) {
-				hosts.forEach(hostid => url.searchParams.append('hostids[]', hostid));
-			}
+			if (hostgroups.length > 0) hostgroups.forEach(id => url.searchParams.append('groupids[]', id));
+			if (hosts.length > 0) hosts.forEach(id => url.searchParams.append('hostids[]', id));
 
 			const selected_severities = this._fields.severities || [];
 			if (selected_severities.length > 0) {
-				selected_severities.forEach(sev_id => {
-					url.searchParams.append(`severities[${sev_id}]`, sev_id);
-				});
+				selected_severities.forEach(sev_id => url.searchParams.append(`severities[${sev_id}]`, sev_id));
 			}
 			
-			if (show_suppressed == 1) {
+			if (show_suppressed == 1 || show_suppressed_only == 1) {
 				url.searchParams.set('show_suppressed', '1');
 			} else {
 				url.searchParams.set('show_suppressed', '0');
 			}
 			
-			if (exclude_maintenance == 1) {
-				url.searchParams.set('maintenance_status', '0');
-			} else {
-				url.searchParams.set('maintenance_status', '1');
-			}
+			if (exclude_maintenance == 1) url.searchParams.set('maintenance_status', '0');
+			else url.searchParams.set('maintenance_status', '1');
 
 			if (tags.length > 0) {
 				tags.forEach((tag, index) => {
@@ -123,6 +107,7 @@ class WidgetHostGroupStatus extends CWidget {
 			tags: this._fields.tags || [],
 			show_acknowledged: this._fields.show_acknowledged || 0,
 			show_suppressed: this._fields.show_suppressed || 0,
+			show_suppressed_only: this._fields.show_suppressed_only || 0, // NOVO
 			exclude_maintenance: this._fields.exclude_maintenance || 0,
 			count_mode: this._fields.count_mode || 1,
 			widget_color: this._fields.widget_color || '4CAF50',
@@ -143,18 +128,11 @@ class WidgetHostGroupStatus extends CWidget {
 		super.setContents(response);
 		this._target.classList.remove('is-loading');
 
-		if (response.fields_values) {
-			this._fields = response.fields_values;
-		}
-
+		if (response.fields_values) this._fields = response.fields_values;
 		this.setContainerSize();
 
-		if (response.host_data) {
-			this._vars.host_data = response.host_data;
-		}
-		if (response.widget_config) {
-			this._vars.widget_config = response.widget_config;
-		}
+		if (response.host_data) this._vars.host_data = response.host_data;
+		if (response.widget_config) this._vars.widget_config = response.widget_config;
 
 		if (this._body) {
 			this._body.removeEventListener('click', this.onWidgetClick.bind(this));
