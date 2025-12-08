@@ -295,40 +295,27 @@ class WidgetMap extends CWidget {
 		}
 	}
 	
-	// --- MUDANÇA: Usando o novo campo 'severities' ---
 	buildUrlWithFilters() {
 		const url = new URL('zabbix.php', window.location.origin);
 		url.searchParams.set('action', 'problem.view');
 		url.searchParams.set('filter_set', '1');
 
-		// 1. Severidades
-		// O campo 'severities' agora é um array de inteiros (ex: [2, 4, 5])
 		const selected_severities = this._fields.severities || [];
-		
-		// O filtro do problem.view espera severities[ID]=ID
 		if (selected_severities.length > 0 && selected_severities.length < 6) {
-			// Se não estiverem todos marcados (Zabbix assume 'todos' se nenhum for enviado, ou todos)
-			// Mas para ser preciso:
 			selected_severities.forEach(sev_id => {
 				url.searchParams.append(`severities[${sev_id}]`, sev_id);
 			});
 		}
 
-		// 2. Ack
-		if (this._fields.show_acknowledged == 0) {
-			url.searchParams.set('acknowledgement_status', '1'); 
-		} else {
-			url.searchParams.set('acknowledgement_status', '0'); 
-		}
+		if (this._fields.show_acknowledged == 0) url.searchParams.set('acknowledgement_status', '1'); 
+		else url.searchParams.set('acknowledgement_status', '0'); 
 
-		// 3. Suppressed
-		if (this._fields.show_suppressed == 1) {
+		if (this._fields.show_suppressed == 1 || this._fields.show_suppressed_only == 1) {
 			url.searchParams.set('show_suppressed', '1');
 		} else {
 			url.searchParams.set('show_suppressed', '0');
 		}
 
-		// 4. Tags
 		const tags = this._fields.tags || [];
 		if (tags.length > 0) {
 			tags.forEach((tag, index) => {
@@ -341,7 +328,6 @@ class WidgetMap extends CWidget {
 
 		return url;
 	}
-	// --- FIM DA MUDANÇA ---
 
 	buildPopupHtml(host_group) {
 		const colors = this._vars.severity_colors || {};
@@ -400,8 +386,8 @@ class WidgetMap extends CWidget {
 						}
 
 						const button_text = problem.acknowledged ? 'Update' : '(Ack)';
-						hosts_html += ` <a class="map-popup-ack-btn"
-											href="#"
+						hosts_html += ` <a class="map-popup-ack-btn" 
+											href="#" 
 											onClick="acknowledgePopUp({eventids: ['${eventid}']}); event.stopPropagation(); return false;">
 											 ${button_text}
 										 </a>
@@ -470,10 +456,7 @@ class WidgetMap extends CWidget {
 		problems.forEach(problem => {
 			const sev_color = colors[problem.severity] || '#97AAB3';
 			const sev_name = severities[problem.severity] || 'Unknown';
-			
-			const sev_text_class = (problem.severity == 2 || problem.severity == 3 || problem.severity == 0)
-				? 'sev-text-dark' : 'sev-text-light';
-			
+			const sev_text_class = (problem.severity == 2 || problem.severity == 3 || problem.severity == 0) ? 'sev-text-dark' : 'sev-text-light';
 			const button_text = problem.acknowledged ? 'Update' : '(Ack)';
 			
 			const ack_button = `
@@ -516,13 +499,9 @@ class WidgetMap extends CWidget {
 			try {
 				const regex = new RegExp(label_regex);
 				const match = source_string.match(regex);
-				if (match && match[1]) {
-					return match[1];
-				} else if (match && match[0]) {
-					return match[0];
-				} else {
-					return source_string; 
-				}
+				if (match && match[1]) return match[1];
+				else if (match && match[0]) return match[0];
+				else return source_string; 
 			} catch (e) {
 				console.error('Invalid Regex in MapWidget config:', e.message);
 				return source_string;
@@ -552,12 +531,8 @@ class WidgetMap extends CWidget {
 		try {
 			const url = new URL(mapUrl);
 			let pathname = url.pathname;
-			if (pathname.endsWith('/')) {
-				pathname = pathname.slice(0, -1);
-			}
-			if (!pathname.endsWith('style.json')) {
-				pathname += '/style.json';
-			}
+			if (pathname.endsWith('/')) pathname = pathname.slice(0, -1);
+			if (!pathname.endsWith('style.json')) pathname += '/style.json';
 			return url.origin + pathname + url.search;
 		} catch (error) {
 			console.error('Error parsing map URL:', error);
@@ -575,7 +550,6 @@ class WidgetMap extends CWidget {
 	onDestroy() {
 		this._location_markers.forEach(marker => marker.remove());
 		this._location_markers.clear();
-
 		if (this._map) {
 			this._map.remove();
 			this._map = null;
@@ -611,13 +585,11 @@ class WidgetMap extends CWidget {
 			tags: this._fields.tags || [],
 			label_regex: this._fields.label_regex,
 			label_source: this._fields.label_source,
-			
-			// --- MUDANÇA: Envia o array de severities e novos campos ---
 			severities: this._fields.severities || [], // Array
 			show_acknowledged: this._fields.show_acknowledged,
 			show_suppressed: this._fields.show_suppressed,
+			show_suppressed_only: this._fields.show_suppressed_only, // Novo
 			exclude_maintenance: this._fields.exclude_maintenance
-			// ----------------------------------------------------------
 		};
 	}
 
