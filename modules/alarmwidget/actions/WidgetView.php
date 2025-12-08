@@ -7,7 +7,6 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
-use CMacrosResolverHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -37,6 +36,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		
+		// Se "Only" estiver marcado, forçamos a engine a trazer os suprimidos
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
 
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
@@ -57,6 +57,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		// 2. Mapeamento de Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
+		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+			$show_mode = TRIGGERS_OPTION_ALL; 
+		} 
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -76,7 +79,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 2 
+			'show_opdata' => 1
 		], $search_limit);
 
 		// Coleta de IDs
@@ -106,41 +109,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Hidratação 2: Trigger + Resolver Macros
+		// 5. Hidratação 2: Dados do Host e OpData (Trigger API)
 		$trigger_info_map = [];
-		$resolved_opdata = [];
-
 		if (!empty($triggerIds)) {
-			// CORREÇÃO CRÍTICA: API_OUTPUT_EXTEND garante que todos os campos necessários
-			// (description, expression, etc) estejam presentes para o CMacrosResolverHelper.
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => API_OUTPUT_EXTEND, 
+				'output' => ['triggerid', 'opdata'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'selectFunctions' => 'extend',
-				'preservekeys' => true
+				'preservekeys' => true,
+				'expandData' => true
 			]);
-
-			// Resolução de OpData com tratamento de erro
-			$problems_for_macros = [];
-			foreach ($data['problems'] as $p) {
-				if (isset($db_triggers[$p['objectid']])) {
-					$problems_for_macros[$p['eventid']] = $p;
-				}
-			}
-
-			try {
-				$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
-					$db_triggers,
-					[
-						'events' => $problems_for_macros,
-						'html' => false
-					]
-				);
-			} catch (\Throwable $e) {
-				// Segura a execução em caso de erro na macro, mantendo o widget vivo
-				$resolved_opdata = []; 
-			}
 
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
@@ -152,10 +130,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
-				
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					'raw_opdata' => $trig['opdata'] ?? ''
+					'opdata' => $trig['opdata'] ?? ''
 				];
 			}
 		}
@@ -168,10 +145,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
+				// Recupera status seguro do mapa de eventos
 				$status_info = $event_status_map[$eventid] ?? ['sup' => 0, 'ack' => 0];
 				$p_sup = $status_info['sup'];
 				$p_ack = $status_info['ack'];
 
+				// --- FILTRO ONLY SUPPRESSED ---
 				if ($show_suppressed_only == 1 && $p_sup == 0) {
 					continue; 
 				}
@@ -180,6 +159,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
+				// Filtros de Host
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
@@ -195,9 +175,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
-				// Tenta pegar o resolvido, senão o bruto
-				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
-
 				$age_seconds = time() - $clock;
 				
 				$problems_final[] = [
@@ -212,9 +189,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
+					
 					'ack_count' => $p_ack,
 					'suppressed' => $p_sup, 
-					'operational_data' => $opdata_final
+					'operational_data' => $info['opdata']
 				];
 			}
 		}
