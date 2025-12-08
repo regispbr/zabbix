@@ -20,7 +20,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'tags' => $this->fields_values['tags'] ?? [],
 			'show_acknowledged' => $this->fields_values['show_acknowledged'] ?? 1,
 			'show_suppressed' => $this->fields_values['show_suppressed'] ?? 0,
-			// Novo filtro
 			'show_suppressed_only' => $this->fields_values['show_suppressed_only'] ?? 0,
 			'exclude_maintenance' => $this->fields_values['exclude_maintenance'] ?? 0
 		];
@@ -92,8 +91,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'output' => ['hostid'],
 			'monitored_hosts' => true,
 			'preservekeys' => true,
-			// Não filtramos tags aqui, pois queremos contar hosts totais corretamente para o modo "All"
-			// As tags serão filtradas na busca de problemas
 		];
 
 		if ($problem_filters['exclude_maintenance'] == 1) {
@@ -132,113 +129,85 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return ['count' => $total_host_count];
 		}
 
-		// === PASSO 2: Obter Problemas (API Problem é mais confiável que Trigger) ===
+		// === PASSO 2: Obter Hosts com Problemas (Corrigido) ===
 		$hosts_with_alarms_map = [];
 		
 		if (!empty($severity_ids)) {
 			try {
-				// Configuramos a busca de Problemas
-				$problem_options = [
-					'output' => ['objectid', 'suppressed', 'acknowledged'], // Precisamos do triggerid (objectid) para saber o host? Não, problem.get não retorna hostid direto se não pedir
-					'selectHosts' => ['hostid'], // Pedimos os hosts associados ao problema
+				// 2.1 Buscar Triggers (para saber os Hosts)
+				$triggers = API::Trigger()->get([
+					'output' => ['triggerid'],
+					'selectHosts' => ['hostid'], // AQUI pode usar selectHosts
 					'hostids' => $all_host_ids,
-					'severities' => $severity_ids,
-					'evaltype' => $problem_filters['evaltype'],
-					'tags' => $problem_filters['tags'],
-					'recent' => true // Importante para pegar problemas ativos
-				];
+					'filter' => [
+						'value' => TRIGGER_VALUE_TRUE, // Apenas triggers em estado de problema
+						'priority' => $severity_ids,
+						'status' => TRIGGER_STATUS_ENABLED
+					],
+					'monitored' => true,
+					'skipDependent' => true,
+					'preservekeys' => true
+				]);
 
-				// Lógica de Supressão para a API
-				// Se "Only Suppressed" ou "Show Suppressed" estiver marcado, pedimos suprimidos
-				if ($problem_filters['show_suppressed'] == 1 || $problem_filters['show_suppressed_only'] == 1) {
-					$problem_options['suppressed'] = true; // Traz suprimidos e não suprimidos (API Zabbix < 7.0 comportamento pode variar, mas geralmente é isso)
-                    // Na API Problem, 'suppressed' => true traz AMBOS ou APENAS suprimidos?
-                    // Documentação Zabbix 6/7: "If set to true, the response will contain only suppressed problems." -> CUIDADO!
-                    // CORREÇÃO: Problem API "suppressed": true (apenas suprimidos), false (apenas normais), null (todos).
-                    
-                    if ($problem_filters['show_suppressed_only'] == 1) {
-                        $problem_options['suppressed'] = true; // Apenas suprimidos
-                    } elseif ($problem_filters['show_suppressed'] == 1) {
-                        $problem_options['suppressed'] = null; // Todos (API Problem default é null = todos? Não, default é false = só normais. Null = todos)
-                        // Hack: Para API Problem, não passar 'suppressed' traz apenas normais. 
-                        // Para trazer todos, não existe um parâmetro 'all'. Temos que fazer duas chamadas ou não usar esse filtro na API e filtrar no PHP.
-                        // Vamos não passar 'suppressed' na API e filtrar no PHP? Não, se não passar, só vem normais.
-                        
-                        // Solução segura: Se Show Suppressed = 1 (e Only = 0), não definimos 'suppressed' na query? 
-                        // Não, definimos 'suppressed' => null para trazer tudo (se a API suportar null).
-                        // Se a API não suportar null, teremos que fazer chamadas separadas?
-                        // Teste prático: unset($problem_options['suppressed']) geralmente traz apenas não-suprimidos.
-                        
-                        // Vamos assumir que queremos filtrar no PHP para garantir.
-                        // Mas para trazer suprimidos, precisamos avisar a API.
-                        // Zabbix 7: 'suppressed' => true (show suppressed problems).
-                        unset($problem_options['suppressed']); // Traz tudo (depende da versão).
-                        // Vamos usar a lógica "traga tudo o que puder" e filtrar no PHP.
-                        // Mas espere, API Problem do Zabbix geralmente filtra suppressed=false por padrão.
-                        // Vamos tentar forçar a busca de suprimidos explicitamente se necessário.
-                    } else {
-                        $problem_options['suppressed'] = false; // Apenas normais
-                    }
-				} else {
-					$problem_options['suppressed'] = false; // Apenas normais
-				}
-                
-                // REFINAMENTO DA LÓGICA DE SUPRESSÃO PARA API
-                // Se Only Suppressed = 1 -> 'suppressed' => true
-                // Se Show Suppressed = 1 -> Não enviar o parâmetro (traz tudo? ou precisa de lógica extra?)
-                // Na API Problem.get: "suppressed" (boolean) - if set to true, return only suppressed problems. If set to false, return only problems that are NOT suppressed.
-                // Se omitido? Retorna ambos? Não, geralmente retorna não-suprimidos.
-                
-                // Vamos simplificar: Faremos a busca em duas etapas se for "Show Suppressed" (Todos).
-                // Ou, melhor: Se "Only", 'suppressed'=>true. Se "Show", fazemos duas queries e merge, ou assumimos que a API sem parametro traz não suprimidos e com parametro true traz suprimidos.
-                
-                // CORREÇÃO: Vamos confiar no filtro PHP pós-busca.
-                // Para garantir que temos dados, vamos buscar sem filtro de supressão se for "Show Suppressed" (se a API permitir) ou fazer 2 chamadas.
-                // Mas para manter simples e eficiente:
-                
-                if ($problem_filters['show_suppressed_only'] == 1) {
-                    $problem_options['suppressed'] = true;
-                } elseif ($problem_filters['show_suppressed'] == 1) {
-                    // Queremos tudo.
-                    // Vamos buscar normais.
-                    $probs_normal = API::Problem()->get($problem_options + ['suppressed' => false]);
-                    // Vamos buscar suprimidos.
-                    $probs_sup = API::Problem()->get($problem_options + ['suppressed' => true]);
-                    $problems = array_merge($probs_normal, $probs_sup);
-                } else {
-                    // Padrão: Apenas não suprimidos
-                    $problem_options['suppressed'] = false;
-                    $problems = API::Problem()->get($problem_options);
-                }
+				if (!empty($triggers)) {
+					$triggerids = array_keys($triggers);
 
-                // Se não entrou no IF do meio, executamos a query única
-                if (!isset($problems)) {
-                    $problems = API::Problem()->get($problem_options);
-                }
+					// 2.2 Buscar Problemas (para saber status Supressed/Ack)
+					// Não usamos selectHosts aqui, pois dá erro.
+					$problem_options = [
+						'output' => ['objectid', 'suppressed', 'acknowledged'],
+						'objectids' => $triggerids,
+						'source' => EVENT_SOURCE_TRIGGERS,
+						'object' => EVENT_OBJECT_TRIGGER,
+						'recent' => true,
+						'evaltype' => $problem_filters['evaltype'],
+						'tags' => $problem_filters['tags']
+					];
 
-				foreach ($problems as $problem) {
-                    // Filtragem no PHP para garantir
-					$p_ack = (int)$problem['acknowledged'];
-					$p_sup = (int)$problem['suppressed'];
-
-					if ($p_ack == 1 && !$problem_filters['show_acknowledged']) {
-						continue;
+					// Lógica de Supressão na API
+					if ($problem_filters['show_suppressed_only'] == 1) {
+						$problem_options['suppressed'] = true;
+					} elseif ($problem_filters['show_suppressed'] == 1) {
+						// Trazer tudo (duas chamadas para garantir)
+						$p1 = API::Problem()->get($problem_options + ['suppressed' => false]);
+						$p2 = API::Problem()->get($problem_options + ['suppressed' => true]);
+						$problems = array_merge($p1, $p2);
+					} else {
+						// Padrão: Apenas não suprimidos
+						$problem_options['suppressed'] = false;
+						$problems = API::Problem()->get($problem_options);
 					}
-                    // O filtro de supressão já foi tratado na API, mas confirmamos:
-					if ($problem_filters['show_suppressed_only'] == 1 && $p_sup == 0) {
-						continue;
-					}
-                    if ($problem_filters['show_suppressed'] == 0 && $p_sup == 1) {
-                        continue;
-                    }
 
-					foreach ($problem['hosts'] as $host) {
-						if (isset($all_hosts[$host['hostid']])) {
-							$hosts_with_alarms_map[$host['hostid']] = true;
+					// Se não foi a estratégia de merge, executa agora
+					if (!isset($problems)) {
+						$problems = API::Problem()->get($problem_options);
+					}
+
+					// 2.3 Cruzamento
+					foreach ($problems as $problem) {
+						$triggerid = $problem['objectid'];
+						$p_ack = (int)$problem['acknowledged'];
+						$p_sup = (int)$problem['suppressed'];
+
+						// Filtros PHP de segurança
+						if ($p_ack == 1 && !$problem_filters['show_acknowledged']) continue;
+						
+						if ($problem_filters['show_suppressed_only'] == 1 && $p_sup == 0) continue;
+						if ($problem_filters['show_suppressed'] == 0 && $p_sup == 1) continue;
+
+						// Mapear para o Host usando a Trigger
+						if (isset($triggers[$triggerid]['hosts'])) {
+							foreach ($triggers[$triggerid]['hosts'] as $host) {
+								if (isset($all_hosts[$host['hostid']])) {
+									$hosts_with_alarms_map[$host['hostid']] = true;
+								}
+							}
 						}
 					}
 				}
-			} catch (\Exception $e) {}
+			} catch (\Exception $e) {
+				// error_log("HostGroupStatus Error: " . $e->getMessage());
+			}
 		}
 		
 		$hosts_with_alarms_count = count($hosts_with_alarms_map);
