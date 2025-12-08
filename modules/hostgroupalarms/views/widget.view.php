@@ -1,29 +1,7 @@
 <?php declare(strict_types = 0);
 /*
-** Zabbix
-** Copyright (C) 2001-2023 Zabbix SIA
-**
-** This program is free software; you can redistribute it and/or modify
-** it under the terms of the GNU General Public License as published by
-** the Free Software Foundation; either version 2 of the License, or
-** (at your option) any later version.
-**
-** This program is distributed in the hope that it will be useful,
-** but WITHOUT ANY WARRANTY; without even the implied warranty of
-** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-** GNU General Public License for more details.
-**
-** You should have received a copy of the GNU General Public License
-** along with this program; if not, write to the Free Software
-** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-**/
-
-/**
- * Host Group Alarms widget view.
- *
- * @var CView $this
- * @var array $data
- */
+** Host Group Alarms widget view.
+*/
 
 // Build inline styles
 $styles = [
@@ -44,7 +22,6 @@ $styles = [
 	'min-height: 120px'
 ];
 
-// Add border styles if enabled
 if ($data['show_border']) {
 	$styles[] = 'border: ' . $data['border_width'] . 'px solid ' . $data['border_color'];
 	$styles[] = 'border-radius: 8px';
@@ -71,7 +48,6 @@ if ($data['total_alarms'] == 0) {
 		->addClass('hostgroup-alarms-count')
 		->addStyle('font-size: ' . ($data['font_size'] - 2) . 'px; opacity: 0.8;');
 } else {
-	// Show severity name
 	$severity_names = [
 		0 => _('Not classified'),
 		1 => _('Information'),
@@ -80,21 +56,44 @@ if ($data['total_alarms'] == 0) {
 		4 => _('High'),
 		5 => _('Disaster')
 	];
-	
 	$severity_name = $severity_names[$data['highest_severity']] ?? _('Unknown');
 	
 	$content_items[] = (new CDiv($severity_name))
 		->addClass('hostgroup-alarms-severity')
 		->addStyle('font-size: ' . ($data['font_size'] + 2) . 'px; font-weight: bold; margin-bottom: 4px;');
 	
-	// Show alarm count
 	$alarm_text = $data['total_alarms'] . ' ' . ($data['total_alarms'] == 1 ? _('alarm') : _('alarms'));
 	$content_items[] = (new CDiv($alarm_text))
 		->addClass('hostgroup-alarms-count')
 		->addStyle('font-size: ' . $data['font_size'] . 'px;');
+		
+	// --- ÍCONES NO CARD PRINCIPAL (Sua ideia) ---
+	$has_suppressed = false;
+	$has_acked = false;
+	
+	if (!empty($data['detailed_alarms'])) {
+		foreach ($data['detailed_alarms'] as $alarm) {
+			if ($alarm['suppressed'] == 1) $has_suppressed = true;
+			if ($alarm['acknowledged'] == 1) $has_acked = true;
+		}
+	}
+	
+	$icons_div = (new CDiv())->addClass('hostgroup-alarms-icons')->addStyle('position: absolute; bottom: 5px; right: 5px; font-size: 14px;');
+	
+	if ($has_suppressed) {
+		$icons_div->addItem((new CSpan())->addClass(ZBX_ICON_EYE_OFF)->setTitle(_('Contains suppressed problems'))->addStyle('margin-left: 5px; cursor: help;'));
+	}
+	if ($has_acked) {
+		$icons_div->addItem((new CSpan('✔'))->setTitle(_('Contains acknowledged problems'))->addStyle('margin-left: 5px; cursor: help;'));
+	}
+	
+	if ($has_suppressed || $has_acked) {
+		$content_items[] = $icons_div;
+	}
+	// --------------------------------------------
 }
 
-// Create tooltip content if enabled and there are alarms
+// Tooltip
 $tooltip_content = '';
 if ($data['show_detailed_tooltip'] && $data['total_alarms'] > 0 && !empty($data['detailed_alarms'])) {
 	$tooltip_items = array_slice($data['detailed_alarms'], 0, $data['tooltip_max_items']);
@@ -112,13 +111,24 @@ if ($data['show_detailed_tooltip'] && $data['total_alarms'] > 0 && !empty($data[
 		$tooltip_html .= '<div class="tooltip-severity">' . $alarm['severity_name'] . '</div>';
 		$tooltip_html .= '<div class="tooltip-host">' . htmlspecialchars($alarm['host_name']) . '</div>';
 		$tooltip_html .= '<div class="tooltip-description">' . htmlspecialchars($alarm['description']) . '</div>';
-		$tooltip_html .= '<div class="tooltip-status">' . $ack_status . '</div>';
+		
+		// --- STATUS NO TOOLTIP (Com ícones) ---
+		$tooltip_html .= '<div class="tooltip-status">';
+		if ($alarm['suppressed']) {
+			$tooltip_html .= '<span class="' . ZBX_ICON_EYE_OFF . '" title="' . _('Suppressed') . '" style="margin-right: 5px;"></span>';
+		}
+		if ($alarm['acknowledged']) {
+			$tooltip_html .= '<span style="margin-right: 5px;">✔</span>';
+		}
+		$tooltip_html .= $ack_status . '</div>';
+		// --------------------------------------
 		
 		if ($alarm['eventid']) {
 			$tooltip_html .= '<div class="tooltip-actions">';
 			$tooltip_html .= '<a href="tr_events.php?triggerid=' . $alarm['triggerid'] . '&eventid=' . $alarm['eventid'] . '" target="_blank">View Event</a>';
 			if (!$alarm['acknowledged']) {
-				$tooltip_html .= ' | <a href="acknow.php?eventid=' . $alarm['eventid'] . '" target="_blank">Acknowledge</a>';
+				// Usa o javascript nativo para popup de ack
+				$tooltip_html .= ' | <a href="#" onclick="acknowledgePopUp({eventids: [\'' . $alarm['eventid'] . '\']}); return false;">Acknowledge</a>';
 			}
 			$tooltip_html .= '</div>';
 		}
@@ -139,7 +149,6 @@ $main_container = (new CDiv($content_items))
 	->addClass('hostgroup-alarms-container')
 	->addStyle($style_string);
 
-// Add tooltip attribute if content exists
 if (!empty($tooltip_content)) {
 	$main_container->setAttribute('data-tooltip', $tooltip_content);
 }
