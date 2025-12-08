@@ -12,21 +12,20 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// error_log("DEBUG ALARM: Iniciando Widget...");
-
-		// Constantes
+		// Constantes de fallback
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
 		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
 
-		// 1. Inputs
+		// 1. Coleta de Filtros
 		$groupids = $this->fields_values['groupids'] ?? [];
 		$hostids = $this->fields_values['hostids'] ?? [];
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
 		$severities = $this->fields_values['severities'] ?? [];
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
+		
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 		
@@ -37,10 +36,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		
+		// Se "Only" estiver marcado, forçamos a engine a trazer os suprimidos
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
+
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
-		// Colunas
+		// Configuração de Colunas
 		$show_columns = [];
 		if (!empty($this->fields_values['show_column_host'])) $show_columns[] = 'host';
 		if (!empty($this->fields_values['show_column_severity'])) $show_columns[] = 'severity';
@@ -54,7 +55,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 		}
 
-		// Filtros Engine
+		// 2. Mapeamento de Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
 			$show_mode = TRIGGERS_OPTION_ALL; 
@@ -66,7 +67,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 2. Engine Nativa
+		// 3. Chamada à Engine Nativa
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -81,9 +82,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_opdata' => 0
 		], $search_limit);
 
-		// 3. Coleta de IDs
+		// Coleta de IDs
 		$triggerIds = [];
-		$eventIds = []; // Novo array para buscar detalhes do evento
+		$eventIds = [];
 		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
 				$triggerIds[] = $problem['objectid'];
@@ -92,7 +93,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		}
 
 		// 4. Hidratação 1: Status Real do Evento (Problem API)
-		// Isso garante que temos 'suppressed' e 'acknowledged' corretos para O EVENTO ESPECÍFICO
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -101,8 +101,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'preservekeys' => true
 			]);
 			
-			// Se não achar em Problem (ex: resolvidos antigos), tenta Event (Histórico)
-			// Mas para supressão ativa, Problem é o lugar certo.
 			foreach ($db_problems as $eid => $prob) {
 				$event_status_map[$eid] = [
 					'sup' => (int)$prob['suppressed'],
@@ -156,7 +154,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if ($show_suppressed_only == 1 && $p_sup == 0) {
 					continue; 
 				}
-				// ------------------------------
 
 				if (!isset($trigger_info_map[$triggerid])) continue;
 				$info = $trigger_info_map[$triggerid];
@@ -225,8 +222,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		});
 
 		$problems_final = array_slice($problems_final, 0, $show_lines);
-
-		// error_log("DEBUG ALARM: Final count: " . count($problems_final));
 
 		$response_data = [
 			'name' => $this->getInput('name', $this->widget->getName()),
