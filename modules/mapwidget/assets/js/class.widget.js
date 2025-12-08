@@ -381,6 +381,10 @@ class WidgetMap extends CWidget {
 						hosts_html += `<li class="map-popup-problem-item" style="color: ${color};">
 										 (${this.escapeHtml(problem.name)})`;
 						
+						// --- ÍCONE NO POPUP DO PIN ---
+						if (problem.suppressed == 1) {
+							hosts_html += ` <span class="icon-eye-off"></span>`;
+						}
 						if (problem.acknowledged) {
 							hosts_html += ` <span class="map-popup-ack-icon">✔</span>`;
 						}
@@ -468,6 +472,11 @@ class WidgetMap extends CWidget {
 				</a>`;
 
 			let ack_html = `<span style="white-space: nowrap;">`;
+			
+			// --- ÍCONES NA TABELA MODAL ---
+			if (problem.suppressed == 1) {
+				ack_html += `<span class="icon-eye-off" style="margin-right: 5px;"></span>`;
+			}
 			if (problem.acknowledged) {
 				ack_html += `<span class="map-popup-ack-icon">✔</span>`;
 			}
