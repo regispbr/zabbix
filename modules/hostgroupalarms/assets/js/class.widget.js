@@ -5,390 +5,309 @@
 
 class WidgetHostGroupAlarms extends CWidget {
 
-    static ZBX_STYLE_CLASS = 'hostgroup-alarms-widget';
+	static ZBX_STYLE_CLASS = 'hostgroup-alarms-widget';
 
-    onInitialize() {
-        this._vars = {};
-        this._body = this._target.querySelector('.hostgroup-alarms-container');
-        this._tooltip = null;
-        this._hide_timer = null;
-        this.setContainerSize();
-        
-        this._target.classList.remove('is-loading');
+	onInitialize() {
+		this._vars = {};
+		this._body = this._target.querySelector('.hostgroup-alarms-container');
+		this._tooltip = null;
+		this._hide_timer = null;
+		this.setContainerSize();
+		
+		this._target.classList.remove('is-loading');
 
-        if (this._body !== null) {
-            this._body.addEventListener('click', this.onWidgetClick.bind(this));
-            this._body.style.cursor = 'pointer';
-            
-            this._body.addEventListener('mouseenter', this.onMouseEnter.bind(this));
-            this._body.addEventListener('mouseleave', this.onMouseLeave.bind(this));
-        }
-    }
+		if (this._body !== null) {
+			this._body.addEventListener('click', this.onWidgetClick.bind(this));
+			this._body.style.cursor = 'pointer';
+			this._body.addEventListener('mouseenter', this.onMouseEnter.bind(this));
+			this._body.addEventListener('mouseleave', this.onMouseLeave.bind(this));
+		}
+	}
 
-    onResize() {
-        this.setContainerSize();
-    }
+	onResize() {
+		this.setContainerSize();
+	}
 
-    setContainerSize() {
-        if (this._body !== null && this._content_body) {
-            const rect = this._content_body.getBoundingClientRect();
-            const padding = (this._fields && this._fields.padding) ? parseInt(this._fields.padding, 10) : 10;
+	setContainerSize() {
+		if (this._body !== null && this._content_body) {
+			const rect = this._content_body.getBoundingClientRect();
+			const padding = (this._fields && this._fields.padding) ? parseInt(this._fields.padding, 10) : 10;
+			const available_height = rect.height - (padding * 2);
+			const available_width = rect.width - (padding * 2);
+			const min_height = 120;
+			const min_width = 160;
 
-            const available_height = rect.height - (padding * 2);
-            const available_width = rect.width - (padding * 2);
+			if (available_height > 0) this._body.style.height = Math.max(available_height, min_height) + 'px';
+			if (available_width > 0) this._body.style.width = Math.max(available_width, min_width) + 'px';
+		}
+	}
 
-            const min_height = 120;
-            const min_width = 160;
+	onWidgetClick(event) {
+		event.preventDefault();
+		event.stopPropagation();
 
-            if (available_height > 0) {
-                this._body.style.height = Math.max(available_height, min_height) + 'px';
-            }
-            if (available_width > 0) {
-                this._body.style.width = Math.max(available_width, min_width) + 'px';
-            }
-        }
-    }
+		const widget_config = this._vars.widget_config || {}; 
+		const alarm_data = this._vars.alarm_data || {};
 
-    onWidgetClick(event) {
-        event.preventDefault();
-        event.stopPropagation();
+		if (widget_config.enable_url_redirect && widget_config.redirect_url) {
+			const target = widget_config.open_in_new_tab ? '_blank' : '_self';
+			window.open(widget_config.redirect_url, target);
+		} 
+		else if (alarm_data.total_alarms > 0) {
+			const hostgroups = this._fields.hostgroups || [];
+			const hosts = this._fields.hosts || [];
+			const tags = this._fields.tags || [];
+			const evaltype = this._fields.evaltype || 0;
+			const show_acknowledged = this._fields.show_acknowledged || 0;
+			const show_suppressed = this._fields.show_suppressed || 0;
+			const show_suppressed_only = this._fields.show_suppressed_only || 0;
+			const exclude_maintenance = this._fields.exclude_maintenance || 0;
+			
+			const url = new URL('zabbix.php', window.location.origin);
+			url.searchParams.set('action', 'problem.view');
+			url.searchParams.set('filter_set', '1');
 
-        const widget_config = this._vars.widget_config || {}; 
-        const alarm_data = this._vars.alarm_data || {};
+			if (hostgroups.length > 0) hostgroups.forEach(gid => url.searchParams.append('groupids[]', gid));
+			if (hosts.length > 0) hosts.forEach(hid => url.searchParams.append('hostids[]', hid));
 
-        if (widget_config.enable_url_redirect && widget_config.redirect_url) {
-            const target = widget_config.open_in_new_tab ? '_blank' : '_self';
-            window.open(widget_config.redirect_url, target);
-        } 
-        else if (alarm_data.total_alarms > 0) {
-            const hostgroups = this._fields.hostgroups || [];
-            const hosts = this._fields.hosts || [];
-            const tags = this._fields.tags || [];
-            const evaltype = this._fields.evaltype || 0;
-            const show_acknowledged = this._fields.show_acknowledged || 0;
-            const show_suppressed = this._fields.show_suppressed || 0;
-            const exclude_maintenance = this._fields.exclude_maintenance || 0;
-            
-            const url = new URL('zabbix.php', window.location.origin);
-            url.searchParams.set('action', 'problem.view');
-            url.searchParams.set('filter_set', '1');
+			const selected_severities = this._fields.severities || [];
+			if (selected_severities.length > 0) {
+				selected_severities.forEach(sev_id => url.searchParams.append(`severities[${sev_id}]`, sev_id));
+			}
 
-            if (hostgroups.length > 0) {
-                hostgroups.forEach(groupid => {
-                    url.searchParams.append('groupids[]', groupid);
-                });
-            }
-            if (hosts.length > 0) {
-                hosts.forEach(hostid => {
-                    url.searchParams.append('hostids[]', hostid);
-                });
-            }
+			if (show_acknowledged == 0) url.searchParams.set('acknowledgement_status', '1');
+			else url.searchParams.set('acknowledgement_status', '0');
+			
+			if (show_suppressed == 1 || show_suppressed_only == 1) {
+				url.searchParams.set('show_suppressed', '1');
+			} else {
+				url.searchParams.set('show_suppressed', '0');
+			}
+			
+			if (exclude_maintenance == 1) url.searchParams.set('maintenance_status', '0');
+			else url.searchParams.set('maintenance_status', '1');
 
-            const severities_map = {
-                'show_not_classified': 0,
-                'show_information': 1,
-                'show_warning': 2,
-                'show_average': 3,
-                'show_high': 4,
-                'show_disaster': 5
-            };
-            
-            let all_severities_checked = true;
-            for (const key of Object.keys(severities_map)) {
-                if (this._fields[key] == 0 || this._fields[key] == false) {
-                    all_severities_checked = false;
-                    break;
-                }
-            }
+			if (tags.length > 0) {
+				tags.forEach((tag, index) => {
+					url.searchParams.append(`tags[${index}][tag]`, tag.tag);
+					url.searchParams.append(`tags[${index}][operator]`, tag.operator);
+					url.searchParams.append(`tags[${index}][value]`, tag.value);
+				});
+				url.searchParams.set('evaltype', evaltype);
+			}
 
-            if (!all_severities_checked) {
-                for (const [key, severity_id] of Object.entries(severities_map)) {
-                    if (this._fields[key] == 1 || this._fields[key] == true) { 
-                        url.searchParams.append(`severities[${severity_id}]`, severity_id);
-                    }
-                }
-            }
+			window.open(url.toString(), '_blank');
+		}
+	}
 
-            if (show_acknowledged == 0) {
-                url.searchParams.set('acknowledgement_status', '1');
-            } else {
-                url.searchParams.set('acknowledgement_status', '0');
-            }
-            
-            if (show_suppressed == 1) {
-                url.searchParams.set('show_suppressed', '1');
-            } else {
-                url.searchParams.set('show_suppressed', '0');
-            }
-            
-            if (exclude_maintenance == 1) {
-                url.searchParams.set('maintenance_status', '0');
-            } else {
-                url.searchParams.set('maintenance_status', '1');
-            }
+	onMouseEnter(event) {
+		if (this._hide_timer) {
+			clearTimeout(this._hide_timer);
+			this._hide_timer = null;
+		}
+		const widget_config = this._vars.widget_config || {};
+		const alarm_data = this._vars.alarm_data || {};
+		
+		this._body.style.transform = 'scale(1.02)';
+		this._body.style.transition = 'transform 0.2s ease';
+		this._body.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
 
-            if (tags.length > 0) {
-                tags.forEach((tag, index) => {
-                    url.searchParams.append(`tags[${index}][tag]`, tag.tag);
-                    url.searchParams.append(`tags[${index}][operator]`, tag.operator);
-                    url.searchParams.append(`tags[${index}][value]`, tag.value);
-                });
-                url.searchParams.set('evaltype', evaltype);
-            }
+		if (widget_config.show_detailed_tooltip && alarm_data.total_alarms > 0) {
+			this.showDetailedTooltip();
+		}
+	}
 
-            window.open(url.toString(), '_blank');
-        }
-    }
+	onMouseLeave(event) {
+		this._body.style.transform = 'scale(1)';
+		this._body.style.boxShadow = 'none';
+		if (this._hide_timer) clearTimeout(this._hide_timer);
+		this._hide_timer = setTimeout(this.hideTooltip.bind(this), 400);
+	}
 
-    onMouseEnter(event) {
-        if (this._hide_timer) {
-            clearTimeout(this._hide_timer);
-            this._hide_timer = null;
-        }
+	showDetailedTooltip() {
+		const alarm_data = this._vars.alarm_data || {};
+		const detailed_alarms = alarm_data.detailed_alarms || [];
+		const max_items = this._fields.tooltip_max_items || 10;
 
-        const widget_config = this._vars.widget_config || {};
-        const alarm_data = this._vars.alarm_data || {};
-        
-        this._body.style.transform = 'scale(1.02)';
-        this._body.style.transition = 'transform 0.2s ease';
-        this._body.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+		if (detailed_alarms.length === 0) return;
+		if (this._tooltip) return;
 
-        if (widget_config.show_detailed_tooltip && alarm_data.total_alarms > 0) {
-            this.showDetailedTooltip();
-        }
-    }
+		this._tooltip = document.createElement('div');
+		this._tooltip.className = 'hostgroup-alarms-tooltip';
+		if (document.body.classList.contains('theme-dark')) this._tooltip.classList.add('dark-mode-tooltip');
+		
+		this._tooltip.innerHTML = this.buildTooltipContent(detailed_alarms, max_items);
 
-    onMouseLeave(event) {
-        this._body.style.transform = 'scale(1)';
-        this._body.style.boxShadow = 'none';
+		this._tooltip.addEventListener('mouseenter', this.onTooltipEnter.bind(this));
+		this._tooltip.addEventListener('mouseleave', this.onTooltipLeave.bind(this));
 
-        if (this._hide_timer) {
-            clearTimeout(this._hide_timer);
-        }
-        this._hide_timer = setTimeout(this.hideTooltip.bind(this), 400);
-    }
+		document.body.appendChild(this._tooltip);
+		this.positionTooltip();
+	}
 
-    showDetailedTooltip() {
-        const alarm_data = this._vars.alarm_data || {};
-        const detailed_alarms = alarm_data.detailed_alarms || [];
-        const max_items = this._fields.tooltip_max_items || 10;
+	onTooltipEnter() {
+		if (this._hide_timer) {
+			clearTimeout(this._hide_timer);
+			this._hide_timer = null;
+		}
+	}
 
-        if (detailed_alarms.length === 0) {
-            return;
-        }
+	onTooltipLeave() {
+		if (this._hide_timer) clearTimeout(this._hide_timer);
+		this.hideTooltip();
+	}
 
-        if (this._tooltip) {
-            return;
-        }
+	buildTooltipContent(alarms, max_items) {
+		const displayed_alarms = alarms.slice(0, max_items);
+		const severity_colors = {0:'#97AAB3', 1:'#7499FF', 2:'#FFC859', 3:'#FFA059', 4:'#E97659', 5:'#E45959'};
 
-        this._tooltip = document.createElement('div');
-        this._tooltip.className = 'hostgroup-alarms-tooltip';
-        
-        if (document.body.classList.contains('theme-dark')) {
-            this._tooltip.classList.add('dark-mode-tooltip');
-        }
-        
-        this._tooltip.innerHTML = this.buildTooltipContent(detailed_alarms, max_items);
+		let html = '<div class="tooltip-header">Alarm Details (' + alarms.length + ' total)</div>';
 
-        this._tooltip.addEventListener('mouseenter', this.onTooltipEnter.bind(this));
-        this._tooltip.addEventListener('mouseleave', this.onTooltipLeave.bind(this));
+		displayed_alarms.forEach(alarm => {
+			const time_formatted = new Date(alarm.clock * 1000).toLocaleString();
+			const severity_color = severity_colors[alarm.severity] || '#97AAB3';
+			const is_ack = (alarm.acknowledged == 1);
+			const is_sup = (alarm.suppressed == 1);
+			const ack_status = is_ack ? 'Acknowledged' : 'Not acknowledged';
+			const ack_class = is_ack ? 'acknowledged' : 'not-acknowledged';
 
-        document.body.appendChild(this._tooltip);
-        this.positionTooltip();
-    }
+			html += '<div class="tooltip-item" style="border-left: 4px solid ' + severity_color + ';">';
+			html += '<div class="tooltip-time">' + time_formatted + '</div>';
+			html += '<div class="tooltip-severity-host">';
+			html += '<span class="tooltip-severity" style="color: ' + severity_color + ';">' + alarm.severity_name + '</span>';
+			html += '<span class="tooltip-host"> - ' + this.escapeHtml(alarm.host_name) + '</span>';
+			html += '</div>';
+			html += '<div class="tooltip-description">' + this.escapeHtml(alarm.description) + '</div>';
+			
+			// --- STATUS COM ICONES ---
+			html += '<div class="tooltip-status ' + ack_class + '">';
+			if (is_sup) {
+				// Ícone de olho cortado (classe nativa do Zabbix)
+				html += '<span class="icon-eye-off" title="Suppressed" style="margin-right: 5px;"></span>';
+			}
+			if (is_ack) {
+				html += '<span style="margin-right: 5px;">✔</span>';
+			}
+			html += ack_status + '</div>';
+			
+			if (alarm.eventid) {
+				html += '<div class="tooltip-actions">';
+				html += '<a href="javascript:void(0)" onclick="acknowledgePopUp({eventids: [\'' + alarm.eventid + '\']}); return false;">Update</a>';
+				html += '</div>';
+			}
+			
+			html += '</div>';
+		});
 
-    onTooltipEnter() {
-        if (this._hide_timer) {
-            clearTimeout(this._hide_timer);
-            this._hide_timer = null;
-        }
-    }
+		if (alarms.length > max_items) {
+			const remaining = alarms.length - max_items;
+			html += '<div class="tooltip-more">... and ' + remaining + ' more alarms</div>';
+		}
 
-    onTooltipLeave() {
-        if (this._hide_timer) {
-            clearTimeout(this._hide_timer);
-        }
-        this.hideTooltip();
-    }
+		return html;
+	}
 
-    buildTooltipContent(alarms, max_items) {
-        const displayed_alarms = alarms.slice(0, max_items);
-        const severity_colors = {
-            0: '#97AAB3', // Not classified
-            1: '#7499FF', // Information
-            2: '#FFC859', // Warning
-            3: '#FFA059', // Average
-            4: '#E97659', // High
-            5: '#E45959'  // Disaster
-        };
+	positionTooltip() {
+		if (!this._tooltip || !this._body) return;
 
-        let html = '<div class="tooltip-header">Alarm Details (' + alarms.length + ' total)</div>';
+		const widget_rect = this._body.getBoundingClientRect();
+		const tooltip_rect = this._tooltip.getBoundingClientRect();
+		const viewport_width = window.innerWidth;
+		const viewport_height = window.innerHeight;
 
-        displayed_alarms.forEach(alarm => {
-            const time_formatted = new Date(alarm.clock * 1000).toLocaleString();
-            const severity_color = severity_colors[alarm.severity] || '#97AAB3';
-            
-            // --- CORREÇÃO: Status de Reconhecimento ---
-            // Verifica explicitamente se é 1 (int) ou '1' (string)
-            const is_ack = (alarm.acknowledged == 1);
-            
-            const ack_status = is_ack ? 'Acknowledged' : 'Not acknowledged';
-            const ack_class = is_ack ? 'acknowledged' : 'not-acknowledged';
+		let left = widget_rect.right + 10 + window.scrollX;
+		let top = widget_rect.top + window.scrollY;
 
-            html += '<div class="tooltip-item" style="border-left: 4px solid ' + severity_color + ';">';
-            html += '<div class="tooltip-time">' + time_formatted + '</div>';
-            html += '<div class="tooltip-severity-host">';
-            html += '<span class="tooltip-severity" style="color: ' + severity_color + ';">' + alarm.severity_name + '</span>';
-            html += '<span class="tooltip-host"> - ' + this.escapeHtml(alarm.host_name) + '</span>';
-            html += '</div>';
-            html += '<div class="tooltip-description">' + this.escapeHtml(alarm.description) + '</div>';
-            html += '<div class="tooltip-status ' + ack_class + '">' + ack_status + '</div>';
-            
-            if (alarm.eventid) {
-                html += '<div class="tooltip-actions">';
-                // --- CORREÇÃO: Link para Update/Acknowledge Nativo ---
-                // Chama a função global acknowledgePopUp do Zabbix
-                html += '<a href="javascript:void(0)" onclick="acknowledgePopUp({eventids: [\'' + alarm.eventid + '\']}); return false;">Update</a>';
-                html += '</div>';
-            }
-            
-            html += '</div>';
-        });
+		if (left + tooltip_rect.width > viewport_width + window.scrollX) {
+			left = widget_rect.left - tooltip_rect.width - 10 + window.scrollX;
+		}
+		if (top + tooltip_rect.height > viewport_height + window.scrollY) {
+			top = (viewport_height + window.scrollY) - tooltip_rect.height - 10;
+		}
+		if (top < window.scrollY) top = window.scrollY + 10;
 
-        if (alarms.length > max_items) {
-            const remaining = alarms.length - max_items;
-            html += '<div class="tooltip-more">... and ' + remaining + ' more alarms</div>';
-        }
+		this._tooltip.style.left = left + 'px';
+		this._tooltip.style.top = top + 'px';
+	}
 
-        return html;
-    }
+	hideTooltip() {
+		if (this._hide_timer) {
+			clearTimeout(this._hide_timer);
+			this._hide_timer = null;
+		}
+		if (this._tooltip) {
+			if (this._tooltip.parentNode === document.body) {
+				document.body.removeChild(this._tooltip);
+			}
+			this._tooltip = null;
+		}
+	}
 
-    positionTooltip() {
-        if (!this._tooltip || !this._body) {
-            return;
-        }
+	escapeHtml(text) {
+		const div = document.createElement('div');
+		div.textContent = text;
+		return div.innerHTML;
+	}
 
-        const widget_rect = this._body.getBoundingClientRect();
-        const tooltip_rect = this._tooltip.getBoundingClientRect();
-        const viewport_width = window.innerWidth;
-        const viewport_height = window.innerHeight;
+	getUpdateRequestData() {
+		return {
+			...super.getUpdateRequestData(),
+			hostgroups: this._fields.hostgroups || [],
+			hosts: this._fields.hosts || [],
+			exclude_hosts: this._fields.exclude_hosts || [],
+			severities: this._fields.severities || [],
+			evaltype: this._fields.evaltype || 0,
+			tags: this._fields.tags || [],
+			show_acknowledged: this._fields.show_acknowledged || 0,
+			show_suppressed: this._fields.show_suppressed || 0,
+			show_suppressed_only: this._fields.show_suppressed_only || 0, // NOVO
+			exclude_maintenance: this._fields.exclude_maintenance || 0,
+			show_group_name: this._fields.show_group_name || 1,
+			group_name_text: this._fields.group_name_text || '',
+			enable_url_redirect: this._fields.enable_url_redirect || 0,
+			redirect_url: this._fields.redirect_url || '',
+			open_in_new_tab: this._fields.open_in_new_tab || 1,
+			show_detailed_tooltip: this._fields.show_detailed_tooltip || 1,
+			tooltip_max_items: this._fields.tooltip_max_items || 10,
+			font_size: this._fields.font_size || 14,
+			font_family: this._fields.font_family || 'Arial, sans-serif',
+			show_border: this._fields.show_border || 1,
+			border_width: this._fields.border_width || 2,
+			padding: this._fields.padding || 10
+		};
+	}
 
-        let left = widget_rect.right + 10 + window.scrollX;
-        let top = widget_rect.top + window.scrollY;
+	setContents(response) {
+		if (this._tooltip) this.hideTooltip();
+		super.setContents(response);
+		this._target.classList.remove('is-loading');
 
-        if (left + tooltip_rect.width > viewport_width + window.scrollX) {
-            left = widget_rect.left - tooltip_rect.width - 10 + window.scrollX;
-        }
-        if (top + tooltip_rect.height > viewport_height + window.scrollY) {
-            top = (viewport_height + window.scrollY) - tooltip_rect.height - 10;
-        }
-        if (top < window.scrollY) {
-            top = window.scrollY + 10;
-        }
+		if (response.fields_values) this._fields = response.fields_values;
+		this.setContainerSize();
 
-        this._tooltip.style.left = left + 'px';
-        this._tooltip.style.top = top + 'px';
-    }
+		if (response.alarm_data) this._vars.alarm_data = response.alarm_data;
+		if (response.widget_config) this._vars.widget_config = response.widget_config;
 
-    hideTooltip() {
-        if (this._hide_timer) {
-            clearTimeout(this._hide_timer);
-            this._hide_timer = null;
-        }
+		if (this._body) {
+			this._body.removeEventListener('click', this.onWidgetClick.bind(this));
+			this._body.removeEventListener('mouseenter', this.onMouseEnter.bind(this));
+			this._body.removeEventListener('mouseleave', this.onMouseLeave.bind(this));
+		}
+		
+		this._body = this._target.querySelector('.hostgroup-alarms-container');
+		if (this._body !== null) {
+			this._body.addEventListener('click', this.onWidgetClick.bind(this));
+			this._body.addEventListener('mouseenter', this.onMouseEnter.bind(this));
+			this._body.addEventListener('mouseleave', this.onMouseLeave.bind(this));
+			this._body.style.cursor = 'pointer';
+		}
+	}
 
-        if (this._tooltip) {
-            if (this._tooltip.parentNode === document.body) {
-                document.body.removeChild(this._tooltip);
-            }
-            this._tooltip = null;
-        }
-    }
+	hasPadding() {
+		return false;
+	}
 
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    getUpdateRequestData() {
-        return {
-            ...super.getUpdateRequestData(),
-            hostgroups: this._fields.hostgroups || [],
-            hosts: this._fields.hosts || [],
-            exclude_hosts: this._fields.exclude_hosts || [],
-            evaltype: this._fields.evaltype || 0,
-            tags: this._fields.tags || [],
-            show_acknowledged: this._fields.show_acknowledged || 0,
-            show_suppressed: this._fields.show_suppressed || 0,
-            exclude_maintenance: this._fields.exclude_maintenance || 0,
-            show_group_name: this._fields.show_group_name || 1,
-            group_name_text: this._fields.group_name_text || '',
-            enable_url_redirect: this._fields.enable_url_redirect || 0,
-            redirect_url: this._fields.redirect_url || '',
-            open_in_new_tab: this._fields.open_in_new_tab || 1,
-            show_detailed_tooltip: this._fields.show_detailed_tooltip || 1,
-            tooltip_max_items: this._fields.tooltip_max_items || 10,
-            show_not_classified: this._fields.show_not_classified || 1,
-            show_information: this._fields.show_information || 1,
-            show_warning: this._fields.show_warning || 1,
-            show_average: this._fields.show_average || 1,
-            show_high: this._fields.show_high || 1,
-            show_disaster: this._fields.show_disaster || 1,
-            font_size: this._fields.font_size || 14,
-            font_family: this._fields.font_family || 'Arial, sans-serif',
-            show_border: this._fields.show_border || 1,
-            border_width: this._fields.border_width || 2,
-            padding: this._fields.padding || 10
-        };
-    }
-
-    setContents(response) {
-        document.querySelectorAll('.hostgroup-alarms-tooltip').forEach(el => {
-            if (el) el.remove();
-        });
-        this._tooltip = null;
-        if (this._hide_timer) {
-            clearTimeout(this._hide_timer);
-            this._hide_timer = null;
-        }
-
-        super.setContents(response);
-
-        this._target.classList.remove('is-loading');
-
-        if (response.fields_values) {
-            this._fields = response.fields_values;
-        }
-
-        this.setContainerSize();
-
-        if (response.alarm_data) {
-            this._vars.alarm_data = response.alarm_data;
-        }
-        if (response.widget_config) {
-            this._vars.widget_config = response.widget_config;
-        }
-
-        if (this._body) {
-            this._body.removeEventListener('click', this.onWidgetClick.bind(this));
-            this._body.removeEventListener('mouseenter', this.onMouseEnter.bind(this));
-            this._body.removeEventListener('mouseleave', this.onMouseLeave.bind(this));
-        }
-        
-        this._body = this._target.querySelector('.hostgroup-alarms-container');
-        if (this._body !== null) {
-            this._body.addEventListener('click', this.onWidgetClick.bind(this));
-            this._body.addEventListener('mouseenter', this.onMouseEnter.bind(this));
-            this._body.addEventListener('mouseleave', this.onMouseLeave.bind(this));
-            this._body.style.cursor = 'pointer';
-        }
-    }
-
-    hasPadding() {
-        return false;
-    }
-
-    getRefreshInterval() {
-        return 30;
-    }
+	getRefreshInterval() {
+		return (this._fields && this._fields.refresh_interval) ? this._fields.refresh_interval : 30;
+	}
 }
