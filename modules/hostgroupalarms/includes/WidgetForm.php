@@ -23,49 +23,49 @@ class WidgetForm extends CWidgetForm {
 		$this->addField(new CWidgetFieldMultiSelectHost('hosts', _('Hosts')));
 		$this->addField(new CWidgetFieldMultiSelectHost('exclude_hosts', _('Exclude hosts')));
 
-		$this->addField(
-			(new CWidgetFieldSeverities('severities', _('Severity')))
-				->setDefault([
-					TRIGGER_SEVERITY_NOT_CLASSIFIED,
-					TRIGGER_SEVERITY_INFORMATION,
-					TRIGGER_SEVERITY_WARNING,
-					TRIGGER_SEVERITY_AVERAGE,
-					TRIGGER_SEVERITY_HIGH,
-					TRIGGER_SEVERITY_DISASTER
-				])
-		);
+		// --- SEVERIDADE (Sintaxe Segura) ---
+		$field_severities = new CWidgetFieldSeverities('severities', _('Severity'));
+		$field_severities->setDefault([
+			TRIGGER_SEVERITY_NOT_CLASSIFIED,
+			TRIGGER_SEVERITY_INFORMATION,
+			TRIGGER_SEVERITY_WARNING,
+			TRIGGER_SEVERITY_AVERAGE,
+			TRIGGER_SEVERITY_HIGH,
+			TRIGGER_SEVERITY_DISASTER
+		]);
+		$this->addField($field_severities);
 
-		$this->addField(
-			(new CWidgetFieldRadioButtonList('evaltype', _('Problem Tags'), [
-				TAG_EVAL_TYPE_AND_OR => _('And/Or'),
-				TAG_EVAL_TYPE_OR => _('Or')
-			]))->setDefault(TAG_EVAL_TYPE_AND_OR)
-		);
+		// --- TAGS (Sintaxe Segura) ---
+		$field_evaltype = new CWidgetFieldRadioButtonList('evaltype', _('Problem Tags'), [
+			TAG_EVAL_TYPE_AND_OR => _('And/Or'),
+			TAG_EVAL_TYPE_OR => _('Or')
+		]);
+		$field_evaltype->setDefault(TAG_EVAL_TYPE_AND_OR);
+		$this->addField($field_evaltype);
 
-		$this->addField(new CWidgetFieldTags('tags', _('.'))->setDefault([]));
+		$field_tags = new CWidgetFieldTags('tags', _('.'));
+		$field_tags->setDefault([]);
+		$this->addField($field_tags);
 
-		$this->addField(
-			(new CWidgetFieldCheckBox('show_acknowledged', _('Show acknowledged')))
-				->setDefault(1)
-		);
+		// --- OPÇÕES DE EXIBIÇÃO ---
+		$field_ack = new CWidgetFieldCheckBox('show_acknowledged', _('Show acknowledged'));
+		$field_ack->setDefault(1);
+		$this->addField($field_ack);
 
-		$this->addField(
-			(new CWidgetFieldCheckBox('show_suppressed', _('Show suppressed problems')))
-				->setDefault(0)
-		);
+		$field_sup = new CWidgetFieldCheckBox('show_suppressed', _('Show suppressed problems'));
+		$field_sup->setDefault(0);
+		$this->addField($field_sup);
 		
-		// --- NOVO CAMPO ---
-		$this->addField(
-			(new CWidgetFieldCheckBox('show_suppressed_only', _('Show ONLY suppressed')))
-				->setDefault(0)
-		);
-		// ------------------
+		// NOVO CAMPO: ONLY SUPPRESSED
+		$field_sup_only = new CWidgetFieldCheckBox('show_suppressed_only', _('Show ONLY suppressed'));
+		$field_sup_only->setDefault(0);
+		$this->addField($field_sup_only);
 
-		$this->addField(
-			(new CWidgetFieldCheckBox('exclude_maintenance', _('Exclude hosts in maintenance')))
-				->setDefault(0)
-		);
+		$field_maint = new CWidgetFieldCheckBox('exclude_maintenance', _('Exclude hosts in maintenance'));
+		$field_maint->setDefault(0);
+		$this->addField($field_maint);
 
+		// --- VISUAL E OUTROS ---
 		$this->addField((new CWidgetFieldCheckBox('show_group_name', _('Show group name')))->setDefault(1));
 		$this->addField(new CWidgetFieldTextBox('group_name_text', _('Custom group name')));
 		$this->addField((new CWidgetFieldCheckBox('enable_url_redirect', _('Enable URL redirect')))->setDefault(0));
