@@ -76,7 +76,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 2 // Importante para preparar macros
+			'show_opdata' => 2 
 		], $search_limit);
 
 		// Coleta de IDs
@@ -111,10 +111,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$resolved_opdata = [];
 
 		if (!empty($triggerIds)) {
-			// CORREÇÃO AQUI: Adicionado 'recovery_expression' para evitar o Fatal Error
+			// CORREÇÃO CRÍTICA: API_OUTPUT_EXTEND garante que todos os campos necessários
+			// (description, expression, etc) estejam presentes para o CMacrosResolverHelper.
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => ['triggerid', 'expression', 'recovery_expression', 'opdata', 'priority'],
+				'output' => API_OUTPUT_EXTEND, 
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
 				'selectFunctions' => 'extend',
 				'preservekeys' => true
@@ -137,8 +138,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					]
 				);
 			} catch (\Throwable $e) {
-				// Se falhar a resolução (ex: erro de parse), seguimos sem quebrar o widget
-				// error_log("AlarmWidget OpData Error: " . $e->getMessage());
+				// Segura a execução em caso de erro na macro, mantendo o widget vivo
 				$resolved_opdata = []; 
 			}
 
