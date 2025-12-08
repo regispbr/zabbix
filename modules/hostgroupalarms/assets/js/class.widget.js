@@ -22,6 +22,84 @@ class WidgetHostGroupAlarms extends CWidget {
 			this._body.addEventListener('mouseenter', this.onMouseEnter.bind(this));
 			this._body.addEventListener('mouseleave', this.onMouseLeave.bind(this));
 		}
+		
+		// Injeta estilos da tabela se não existirem
+		this.injectTableStyles();
+	}
+
+	injectTableStyles() {
+		if (document.getElementById('hostgroup-alarms-table-styles')) return;
+		
+		const style = document.createElement('style');
+		style.id = 'hostgroup-alarms-table-styles';
+		style.innerHTML = `
+			.hostgroup-alarms-tooltip {
+				background: #2b2b2b;
+				border: 1px solid #383838;
+				box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+				z-index: 1000;
+				position: absolute;
+				max-width: 600px;
+				padding: 0;
+				border-radius: 2px;
+			}
+			.hostgroup-alarms-table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 12px;
+				color: #f2f2f2;
+			}
+			.hostgroup-alarms-table th {
+				text-align: left;
+				padding: 6px 10px;
+				background: #383838;
+				color: #acacac;
+				font-weight: bold;
+				border-bottom: 1px solid #4f4f4f;
+			}
+			.hostgroup-alarms-table td {
+				padding: 6px 10px;
+				border-bottom: 1px solid #383838;
+				vertical-align: top;
+			}
+			.hostgroup-alarms-table tr:last-child td {
+				border-bottom: none;
+			}
+			.hga-severity {
+				padding: 2px 6px;
+				border-radius: 2px;
+				color: #fff;
+				font-weight: bold;
+				font-size: 11px;
+				display: inline-block;
+				min-width: 60px;
+				text-align: center;
+			}
+			.hga-severity.sev-0 { background: #97AAB3; color: #000; }
+			.hga-severity.sev-1 { background: #7499FF; color: #000; }
+			.hga-severity.sev-2 { background: #FFC859; color: #000; }
+			.hga-severity.sev-3 { background: #FFA059; color: #000; }
+			.hga-severity.sev-4 { background: #E97659; color: #fff; }
+			.hga-severity.sev-5 { background: #E45959; color: #fff; }
+			
+			.hga-ack-btn {
+				color: #7499FF;
+				text-decoration: none;
+				margin-left: 5px;
+			}
+			.hga-ack-btn:hover {
+				text-decoration: underline;
+			}
+			.hostgroup-alarms-footer {
+				background: #383838;
+				padding: 8px 10px;
+				text-align: right;
+				font-style: italic;
+				color: #acacac;
+				border-top: 1px solid #4f4f4f;
+			}
+		`;
+		document.head.appendChild(style);
 	}
 
 	onResize() {
@@ -105,12 +183,13 @@ class WidgetHostGroupAlarms extends CWidget {
 			clearTimeout(this._hide_timer);
 			this._hide_timer = null;
 		}
-		const widget_config = this._vars.widget_config || {};
-		const alarm_data = this._vars.alarm_data || {};
 		
 		this._body.style.transform = 'scale(1.02)';
 		this._body.style.transition = 'transform 0.2s ease';
 		this._body.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+
+		const widget_config = this._vars.widget_config || {};
+		const alarm_data = this._vars.alarm_data || {};
 
 		if (widget_config.show_detailed_tooltip && alarm_data.total_alarms > 0) {
 			this.showDetailedTooltip();
@@ -157,51 +236,54 @@ class WidgetHostGroupAlarms extends CWidget {
 		this.hideTooltip();
 	}
 
+	// --- AQUI ESTÁ A MUDANÇA PRINCIPAL (TABELA) ---
 	buildTooltipContent(alarms, max_items) {
 		const displayed_alarms = alarms.slice(0, max_items);
-		const severity_colors = {0:'#97AAB3', 1:'#7499FF', 2:'#FFC859', 3:'#FFA059', 4:'#E97659', 5:'#E45959'};
-
-		let html = '<div class="tooltip-header">Alarm Details (' + alarms.length + ' total)</div>';
+		
+		let html = `
+			<table class="hostgroup-alarms-table">
+				<thead>
+					<tr>
+						<th>Host</th>
+						<th>Severity</th>
+						<th>Problem</th>
+						<th>Ack</th>
+					</tr>
+				</thead>
+				<tbody>
+		`;
 
 		displayed_alarms.forEach(alarm => {
-			const time_formatted = new Date(alarm.clock * 1000).toLocaleString();
-			const severity_color = severity_colors[alarm.severity] || '#97AAB3';
+			const sev_class = 'sev-' + alarm.severity;
 			const is_ack = (alarm.acknowledged == 1);
 			const is_sup = (alarm.suppressed == 1);
-			const ack_status = is_ack ? 'Acknowledged' : 'Not acknowledged';
-			const ack_class = is_ack ? 'acknowledged' : 'not-acknowledged';
-
-			html += '<div class="tooltip-item" style="border-left: 4px solid ' + severity_color + ';">';
-			html += '<div class="tooltip-time">' + time_formatted + '</div>';
-			html += '<div class="tooltip-severity-host">';
-			html += '<span class="tooltip-severity" style="color: ' + severity_color + ';">' + alarm.severity_name + '</span>';
-			html += '<span class="tooltip-host"> - ' + this.escapeHtml(alarm.host_name) + '</span>';
-			html += '</div>';
-			html += '<div class="tooltip-description">' + this.escapeHtml(alarm.description) + '</div>';
 			
-			// --- STATUS COM ICONES ---
-			html += '<div class="tooltip-status ' + ack_class + '">';
-			if (is_sup) {
-				// Ícone de olho cortado (classe nativa do Zabbix)
-				html += '<span class="icon-eye-off" title="Suppressed" style="margin-right: 5px;"></span>';
-			}
-			if (is_ack) {
-				html += '<span style="margin-right: 5px;">✔</span>';
-			}
-			html += ack_status + '</div>';
+			// Ícones
+			let ack_html = '';
+			if (is_sup) ack_html += '<span class="icon-eye-off" title="Suppressed" style="margin-right: 5px;"></span>';
+			if (is_ack) ack_html += '<span style="margin-right: 5px;">✔</span>';
 			
+			// Botão Update/Ack
 			if (alarm.eventid) {
-				html += '<div class="tooltip-actions">';
-				html += '<a href="javascript:void(0)" onclick="acknowledgePopUp({eventids: [\'' + alarm.eventid + '\']}); return false;">Update</a>';
-				html += '</div>';
+				const btn_text = is_ack ? 'Update' : 'Ack';
+				ack_html += `<a href="javascript:void(0)" class="hga-ack-btn" onclick="acknowledgePopUp({eventids: ['${alarm.eventid}']}); return false;">${btn_text}</a>`;
 			}
-			
-			html += '</div>';
+
+			html += `
+				<tr>
+					<td>${this.escapeHtml(alarm.host_name)}</td>
+					<td><span class="hga-severity ${sev_class}">${alarm.severity_name}</span></td>
+					<td>${this.escapeHtml(alarm.description)}</td>
+					<td>${ack_html}</td>
+				</tr>
+			`;
 		});
+
+		html += `</tbody></table>`;
 
 		if (alarms.length > max_items) {
 			const remaining = alarms.length - max_items;
-			html += '<div class="tooltip-more">... and ' + remaining + ' more alarms</div>';
+			html += `<div class="hostgroup-alarms-footer">... and ${remaining} more alarms</div>`;
 		}
 
 		return html;
@@ -215,16 +297,20 @@ class WidgetHostGroupAlarms extends CWidget {
 		const viewport_width = window.innerWidth;
 		const viewport_height = window.innerHeight;
 
-		let left = widget_rect.right + 10 + window.scrollX;
-		let top = widget_rect.top + window.scrollY;
+		// Tenta centralizar embaixo primeiro
+		let left = widget_rect.left + (widget_rect.width / 2) - (tooltip_rect.width / 2);
+		let top = widget_rect.bottom + 10 + window.scrollY;
 
-		if (left + tooltip_rect.width > viewport_width + window.scrollX) {
-			left = widget_rect.left - tooltip_rect.width - 10 + window.scrollX;
+		// Ajuste horizontal (se sair da tela)
+		if (left < 10) left = 10;
+		if (left + tooltip_rect.width > viewport_width - 10) {
+			left = viewport_width - tooltip_rect.width - 10;
 		}
-		if (top + tooltip_rect.height > viewport_height + window.scrollY) {
-			top = (viewport_height + window.scrollY) - tooltip_rect.height - 10;
+
+		// Ajuste vertical (se não couber embaixo, joga pra cima)
+		if (top + tooltip_rect.height > viewport_height + window.scrollY - 10) {
+			top = widget_rect.top + window.scrollY - tooltip_rect.height - 10;
 		}
-		if (top < window.scrollY) top = window.scrollY + 10;
 
 		this._tooltip.style.left = left + 'px';
 		this._tooltip.style.top = top + 'px';
@@ -260,7 +346,7 @@ class WidgetHostGroupAlarms extends CWidget {
 			tags: this._fields.tags || [],
 			show_acknowledged: this._fields.show_acknowledged || 0,
 			show_suppressed: this._fields.show_suppressed || 0,
-			show_suppressed_only: this._fields.show_suppressed_only || 0, // NOVO
+			show_suppressed_only: this._fields.show_suppressed_only || 0,
 			exclude_maintenance: this._fields.exclude_maintenance || 0,
 			show_group_name: this._fields.show_group_name || 1,
 			group_name_text: this._fields.group_name_text || '',
