@@ -1,9 +1,4 @@
 <?php declare(strict_types = 0);
-/*
-** Zabbix
-** Copyright (C) 2001-2025 Zabbix SIA
-** ... (Licença) ...
-**/
 
 namespace Modules\AlarmWidget\Actions;
 
@@ -17,6 +12,9 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
+		// --- DEBUG: INÍCIO DO WIDGET ---
+		error_log("DEBUG ALARM: Iniciando processamento do Widget...");
+
 		// Constantes de fallback
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
@@ -37,7 +35,21 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
+		
+		// --- LÓGICA DE SUPRESSED ---
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
+		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
+		
+		// DEBUG DOS INPUTS
+		error_log("DEBUG ALARM: Inputs - ShowSup: $show_suppressed | OnlySup: $show_suppressed_only | Excl Maint: $exclude_maintenance");
+
+		// Se "Mostrar APENAS suprimidos" estiver marcado, somos obrigados a pedir suprimidos para a Engine
+		// Senão ela não traz nada e não temos o que filtrar.
+		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
+		
+		error_log("DEBUG ALARM: Engine Show Suppressed Flag: " . ($engine_show_suppressed ? 'TRUE' : 'FALSE'));
+		// ---------------------------
+
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
 		// Configuração de Colunas
@@ -56,6 +68,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		// 2. Mapeamento de Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
+		// if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+		// 	$show_mode = TRIGGERS_OPTION_ALL; 
+		// } 
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -73,10 +88,22 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'evaltype' => $evaltype,
 			'tags' => $tags,
 			'show_symptoms' => false,
-			'show_suppressed' => ($show_suppressed == 1),
+			'show_suppressed' => $engine_show_suppressed, // Envia TRUE se "Only" estiver marcado
 			'acknowledgement_status' => $ack_status,
 			'show_opdata' => 0
 		], $search_limit);
+
+		// --- DEBUG: DADOS DA ENGINE ---
+		if (!empty($data['problems'])) {
+			$count = count($data['problems']);
+			error_log("DEBUG ALARM: Engine retornou $count problemas.");
+			// Loga o primeiro problema para ver a estrutura
+			$first = reset($data['problems']);
+			error_log("DEBUG ALARM: Estrutura do primeiro problema (Engine): " . print_r($first, true));
+		} else {
+			error_log("DEBUG ALARM: Engine retornou 0 problemas.");
+		}
+		// -----------------------------
 
 		// 4. Hidratação Robusta (API de Trigger)
 		$triggerIds = [];
@@ -97,6 +124,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'expandData' => true
 			]);
 
+			// --- DEBUG: API TRIGGER ---
+			if (!empty($db_triggers)) {
+				$first_trig = reset($db_triggers);
+				error_log("DEBUG ALARM: Estrutura da Trigger API (Sample): " . print_r($first_trig, true));
+			}
+			// --------------------------
+
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -108,7 +142,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
-				// --- CORREÇÃO AQUI: Capturando Ack E Suppressed ---
+				// Capturando Ack E Suppressed do lastEvent da Trigger
 				$ack_status_trigger = 0;
 				$sup_status_trigger = 0;
 				if (!empty($trig['lastEvent'])) {
@@ -121,7 +155,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
 					'ack' => $ack_status_trigger,
-					'sup' => $sup_status_trigger, // Armazena o suppressed
+					'sup' => $sup_status_trigger, // Armazena o suppressed da API
 					'opdata' => $opdata
 				];
 			}
@@ -142,6 +176,30 @@ class WidgetView extends CControllerDashboardWidgetView {
 				// Filtros Manuais
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
+
+				// --- DADOS SEGUROS ---
+				// Prioridade para Suppressed: Tenta pegar da engine nativa primeiro, senão pega da trigger
+				// A Engine nativa retorna 'suppressed' => '1' ou '0'.
+				if (isset($problem['suppressed'])) {
+					$p_sup = (int)$problem['suppressed'];
+				} else {
+					$p_sup = $info['sup']; // Fallback para Trigger API
+				}
+				
+				// Ack
+				$p_ack = (int)($problem['acknowledged'] ?? $info['ack']);
+
+				// DEBUG INDIVIDUAL (Pode comentar depois)
+				// error_log("DEBUG ALARM: ProbID: {$problem['eventid']} | EngineSup: " . ($problem['suppressed']??'NULL') . " | TrigSup: {$info['sup']} | FinalSup: $p_sup");
+
+				// --- FILTRO: SHOW ONLY SUPPRESSED ---
+				if ($show_suppressed_only == 1) {
+					if ($p_sup == 0) {
+						// Se quero APENAS suprimidos e este NÃO é suprimido, PULA.
+						continue; 
+					}
+				}
+				// -------------------------------------
 
 				// Dados seguros
 				$r_eventid = $problem['r_eventid'] ?? 0;
@@ -164,8 +222,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
 					
-					'ack_count' => $info['ack'],
-					'suppressed' => $info['sup'], // --- PASSANDO PARA O FRONTEND ---
+					'ack_count' => $p_ack,
+					'suppressed' => $p_sup, 
 					'operational_data' => $info['opdata']
 				];
 			}
@@ -196,6 +254,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 		});
 
 		$problems_final = array_slice($problems_final, 0, $show_lines);
+
+		error_log("DEBUG ALARM: Final count to frontend: " . count($problems_final));
 
 		$response_data = [
 			'name' => $this->getInput('name', $this->widget->getName()),
