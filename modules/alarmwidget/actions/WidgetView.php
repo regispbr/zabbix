@@ -7,6 +7,7 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
+use CMacrosResolverHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -36,7 +37,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		
-		// Se "Only" estiver marcado, forçamos a engine a trazer os suprimidos
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
 
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
@@ -55,11 +55,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 		}
 
-		// 2. Mapeamento de Filtros
+		// 2. Mapeamento de Filtros (CORRIGIDO PARA PERFORMANCE)
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
-		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-			$show_mode = TRIGGERS_OPTION_ALL; 
-		} 
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -68,6 +65,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. Chamada à Engine Nativa
+		// show_opdata => 2 para garantir que a engine prepare o terreno se possível
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -79,7 +77,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 1
+			'show_opdata' => 2 
 		], $search_limit);
 
 		// Coleta de IDs
@@ -109,16 +107,42 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Hidratação 2: Dados do Host e OpData (Trigger API)
+		// 5. Hidratação 2: Trigger + Resolver Macros (CORREÇÃO CRÍTICA)
 		$trigger_info_map = [];
+		$resolved_opdata = [];
+
 		if (!empty($triggerIds)) {
+			// CORREÇÃO: Usar API_OUTPUT_EXTEND para trazer 'expression' e outros campos
+			// que o CMacrosResolverHelper exige.
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => ['triggerid', 'opdata'],
+				'output' => API_OUTPUT_EXTEND, 
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'preservekeys' => true,
-				'expandData' => true
+				'selectFunctions' => 'extend', // Necessário para resolver {ITEM.VALUE}
+				'preservekeys' => true
 			]);
+
+			// Resolução de OpData com tratamento de erro
+			$problems_for_macros = [];
+			foreach ($data['problems'] as $p) {
+				if (isset($db_triggers[$p['objectid']])) {
+					$problems_for_macros[$p['eventid']] = $p;
+				}
+			}
+
+			try {
+				// Tenta resolver. Se falhar por algum dado corrompido, cai no catch.
+				$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
+					$db_triggers,
+					[
+						'events' => $problems_for_macros,
+						'html' => false
+					]
+				);
+			} catch (\Throwable $e) {
+				// Log silencioso ou apenas segue em frente com dados brutos
+				$resolved_opdata = []; 
+			}
 
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
@@ -130,9 +154,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
+				
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					'opdata' => $trig['opdata'] ?? ''
+					// Fallback raw se falhar a resolução
+					'raw_opdata' => $trig['opdata'] ?? ''
 				];
 			}
 		}
@@ -150,7 +176,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$p_sup = $status_info['sup'];
 				$p_ack = $status_info['ack'];
 
-				// --- FILTRO ONLY SUPPRESSED ---
+				// Filtro Only Suppressed
 				if ($show_suppressed_only == 1 && $p_sup == 0) {
 					continue; 
 				}
@@ -175,6 +201,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
+				// Tenta pegar o resolvido, senão o bruto
+				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
+
 				$age_seconds = time() - $clock;
 				
 				$problems_final[] = [
@@ -189,10 +218,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
-					
 					'ack_count' => $p_ack,
 					'suppressed' => $p_sup, 
-					'operational_data' => $info['opdata']
+					'operational_data' => $opdata_final
 				];
 			}
 		}
