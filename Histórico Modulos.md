@@ -59,6 +59,6 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
 
 - Incluir filtro de exibir somente os problemas suprimidos. (5°) (✓)
 
-- Alterar pop-up do Hostgroupalarms para ficar igual ao do mapwidget. (6°) ⏳
+- Alterar pop-up do Hostgroupalarms para ficar igual ao do mapwidget. (6°) (✓)
 
 - Ajustar completamente o widget table, usando o exemplo do github (7°)  ⏳
