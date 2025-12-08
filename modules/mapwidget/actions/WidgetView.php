@@ -2,6 +2,7 @@
 
 namespace Modules\MapWidget\Actions;
 
+use API;
 use CControllerDashboardWidgetView,
 	CControllerResponseData;
 use Modules\MapWidget\Includes\WidgetForm;
@@ -28,25 +29,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 
-		// --- MUDANÇA: SEVERIDADE ---
-		// O campo 'severities' retorna um array de inteiros (ex: [2, 4, 5]) das severidades marcadas.
-		// O código antigo esperava um mapa [0=>1, 1=>0, ...]. Vamos converter para manter compatibilidade.
 		$selected_severities = $this->fields_values['severities'] ?? [];
-		
-		$severity_filters = [
-			-1 => 1 // OK sempre habilitado para lógica interna
-		];
-		
-		// Preenche o mapa (0 a 5)
+		$severity_filters = [ -1 => 1 ];
 		for ($i = 0; $i <= 5; $i++) {
-			// Se o ID da severidade está no array selecionado, marca como 1, senão 0
 			$severity_filters[$i] = in_array($i, $selected_severities) ? 1 : 0;
 		}
-		// --- FIM DA MUDANÇA ---
 
 		$problem_filters = [
 			'show_acknowledged' => $this->fields_values['show_acknowledged'] ?? 1,
-			'show_suppressed' => $this->fields_values['show_suppressed'] ?? 0
+			'show_suppressed' => $this->fields_values['show_suppressed'] ?? 0,
+			'show_suppressed_only' => $this->fields_values['show_suppressed_only'] ?? 0 // Novo
 		];
 
 		$exclude_maintenance = (bool)($this->fields_values['exclude_maintenance'] ?? 0);
@@ -96,12 +88,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$this->setResponse(new CControllerResponseData($data));
 	}
 
-	// ... (Restante do arquivo permanece igual: getZabbixData, getDetailedProblemList, etc.) ...
-	// Copie as funções getZabbixData, getDetailedProblemList, getSeverityColor, formatAge 
-	// do seu arquivo original ou da minha resposta anterior sobre o MapWidget.
-	// Elas não precisam mudar pois a variável $severity_filters já foi adaptada acima.
-	
-	// --- CÓPIA DAS FUNÇÕES AUXILIARES (Para facilitar o Copy-Paste) ---
 	private function getZabbixData($hostgroups, $hosts, $exclude_hosts, $severity_filters, $problem_filters, $evaltype, $tags, $exclude_maintenance): array {
 		$locations_to_map = [];
 		if (empty($hostgroups) && empty($hosts)) return $locations_to_map;
@@ -118,7 +104,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		];
 
 		if (!empty($hosts)) $params['hostids'] = $hosts;
-		elseif (!empty($hostgroups)) $params['groupids'] = $hostgroups;
+		elseif (!empty($hostgroups)) $params['groupids'] = getSubGroups($hostgroups); // Correção de Subgrupos
 
 		if (!empty($exclude_hosts) && !empty($params['hostids'])) {
 			$params['hostids'] = array_diff($params['hostids'], $exclude_hosts);
@@ -136,7 +122,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		if (empty($hosts_from_api)) return $locations_to_map;
 		
-		$user_selected_groupids = $hostgroups;
 		$hostids = array_keys($hosts_from_api);
 		$triggers = []; $problems_api = [];
 		
@@ -146,19 +131,47 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'filter' => ['value' => TRIGGER_VALUE_TRUE],
 				'monitored' => true, 'skipDependent' => true, 'preservekeys' => true
 			]);
+			
+			// Para filtrar "Only Suppressed", precisamos que a API retorne os suprimidos
 			if (!empty($triggers)) {
-				$problems_api = \API::Problem()->get([
+				$prob_options = [
 					'output' => ['objectid', 'severity', 'acknowledged', 'suppressed', 'eventid', 'name'],
 					'objectids' => array_keys($triggers),
-					'symptom' => false, 'preservekeys' => true
-				]);
+					'symptom' => false, 
+					'preservekeys' => true
+				];
+				
+				// Lógica de supressão na API
+				if ($problem_filters['show_suppressed_only'] == 1) {
+					$prob_options['suppressed'] = true;
+				} elseif ($problem_filters['show_suppressed'] == 1) {
+					// Buscar todos (normais + suprimidos). 
+					// Estratégia: 2 chamadas e merge (mais segura)
+					$p1 = \API::Problem()->get($prob_options + ['suppressed' => false]);
+					$p2 = \API::Problem()->get($prob_options + ['suppressed' => true]);
+					$problems_api = $p1 + $p2;
+				} else {
+					$prob_options['suppressed'] = false;
+					$problems_api = \API::Problem()->get($prob_options);
+				}
+				
+				// Se não entrou no IF do meio (já buscou)
+				if (!isset($problems_api) || empty($problems_api) && ($problem_filters['show_suppressed'] != 1 || $problem_filters['show_suppressed_only'] == 1)) {
+					if (!isset($problems_api)) $problems_api = \API::Problem()->get($prob_options);
+				}
 			}
 		} catch (\Exception $e) {}
 
 		$problems_by_host = [];
 		foreach ($problems_api as $problem) {
-			if ($problem['acknowledged'] == 1 && !$problem_filters['show_acknowledged']) continue;
-			if ($problem['suppressed'] == 1 && !$problem_filters['show_suppressed']) continue;
+			$p_ack = (int)$problem['acknowledged'];
+			$p_sup = (int)$problem['suppressed'];
+
+			if ($p_ack == 1 && !$problem_filters['show_acknowledged']) continue;
+			
+			// Filtro Only Suppressed
+			if ($problem_filters['show_suppressed_only'] == 1 && $p_sup == 0) continue;
+			if ($problem_filters['show_suppressed'] == 0 && $p_sup == 1) continue;
 			
 			$trigger_id = $problem['objectid'];
 			if (!isset($triggers[$trigger_id])) continue;
@@ -172,13 +185,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 				
 				$sev = (int)$problem['severity'];
-				$key = $problem['acknowledged'] == 1 ? 'acked' : 'unacked';
+				$key = $p_ack == 1 ? 'acked' : 'unacked';
 				
 				$problems_by_host[$hostid]['counts'][$sev][$key]++;
 				$problems_by_host[$hostid]['events'][$problem['eventid']] = [
 					'name' => $problem['name'],
 					'severity' => $sev,
-					'acknowledged' => (int)$problem['acknowledged']
+					'acknowledged' => $p_ack
 				];
 			}
 		}
@@ -230,7 +243,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		];
 		
 		if (!empty($hosts)) $host_params['hostids'] = $hosts;
-		elseif (!empty($hostgroups)) $host_params['groupids'] = $hostgroups;
+		elseif (!empty($hostgroups)) $host_params['groupids'] = getSubGroups($hostgroups); // Correção
 		else return [];
 
 		if (!empty($exclude_hosts) && !empty($host_params['hostids'])) $host_params['hostids'] = array_diff($host_params['hostids'], $exclude_hosts);
@@ -272,7 +285,23 @@ class WidgetView extends CControllerDashboardWidgetView {
 		];
 		if ($problem_filters['show_acknowledged'] == 0) $options['acknowledged'] = false;
 
-		try { $problems = \API::Problem()->get($options); } catch (\Exception $e) { return $detailed_problems; }
+		// Filtro Suppressed na API
+		if ($problem_filters['show_suppressed_only'] == 1) {
+			$options['suppressed'] = true;
+		} elseif ($problem_filters['show_suppressed'] == 1) {
+			// Estratégia de merge
+			$p1 = \API::Problem()->get($options + ['suppressed' => false]);
+			$p2 = \API::Problem()->get($options + ['suppressed' => true]);
+			$problems = $p1 + $p2;
+		} else {
+			$options['suppressed'] = false;
+			$problems = \API::Problem()->get($options);
+		}
+		
+		if (!isset($problems) && empty($problems) && ($problem_filters['show_suppressed'] != 1 || $problem_filters['show_suppressed_only'] == 1)) {
+			// Se não foi a estratégia de merge, busca direto
+			try { $problems = \API::Problem()->get($options); } catch (\Exception $e) { return $detailed_problems; }
+		}
 		if (empty($problems)) return $detailed_problems;
 
 		$trigger_to_host_map = [];
@@ -281,7 +310,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 		}
 
 		foreach ($problems as $problem) {
-			if ($problem_filters['show_suppressed'] == 0 && $problem['suppressed'] == 1) continue;
+			$p_sup = (int)$problem['suppressed'];
+			
+			// Filtro Only Suppressed no PHP (Segurança)
+			if ($problem_filters['show_suppressed_only'] == 1 && $p_sup == 0) continue;
+			if ($problem_filters['show_suppressed'] == 0 && $p_sup == 1) continue;
 			
 			$hostid = $trigger_to_host_map[$problem['objectid']] ?? null;
 			if ($hostid === null || !isset($hosts_on_map[$hostid])) continue;
