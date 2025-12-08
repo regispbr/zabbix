@@ -79,7 +79,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 1
+			'show_opdata' => 2
 		], $search_limit);
 
 		// Coleta de IDs
