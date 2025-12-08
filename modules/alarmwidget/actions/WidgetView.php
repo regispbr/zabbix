@@ -7,7 +7,7 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
-use CMacrosResolverHelper; // Importante para resolver o OpData
+use CMacrosResolverHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -37,7 +37,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		
-		// Se "Only" estiver marcado, forçamos a engine a trazer os suprimidos
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
 
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
@@ -56,10 +55,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 		}
 
-		// 2. Mapeamento de Filtros (CORRIGIDO PARA PERFORMANCE)
-		// Usamos sempre RECENT_PROBLEM para "All" e "Problem".
-		// Isso garante que "All" mostre problemas ativos + resolvidos recentemente (comportamento da aba Problems).
-		// Evita a busca lenta no histórico (OPTION_ALL).
+		// 2. Mapeamento de Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
@@ -69,7 +65,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. Chamada à Engine Nativa
-		// show_opdata => 2 instrui a engine a preparar dados para expansão
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -81,7 +76,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 2 
+			'show_opdata' => 2 // Importante para preparar macros
 		], $search_limit);
 
 		// Coleta de IDs
@@ -111,19 +106,21 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Hidratação 2: Dados do Host e OpData (Trigger API + Resolver)
+		// 5. Hidratação 2: Trigger + Resolver Macros
 		$trigger_info_map = [];
+		$resolved_opdata = [];
+
 		if (!empty($triggerIds)) {
+			// CORREÇÃO AQUI: Adicionado 'recovery_expression' para evitar o Fatal Error
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => ['triggerid', 'expression', 'opdata', 'priority'], // Dados necessários para macros
+				'output' => ['triggerid', 'expression', 'recovery_expression', 'opdata', 'priority'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'selectFunctions' => 'extend', // Necessário para resolver {ITEM.VALUE}
+				'selectFunctions' => 'extend',
 				'preservekeys' => true
 			]);
 
-			// --- RESOLUÇÃO DE OPERATIONAL DATA ---
-			// Mapeamos os problemas para que o resolvedor saiba qual evento usar para cada trigger
+			// Resolução de OpData com tratamento de erro
 			$problems_for_macros = [];
 			foreach ($data['problems'] as $p) {
 				if (isset($db_triggers[$p['objectid']])) {
@@ -131,15 +128,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// Chama o helper nativo do Zabbix para expandir macros
-			$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
-				$db_triggers,
-				[
-					'events' => $problems_for_macros,
-					'html' => false // Queremos texto puro por enquanto
-				]
-			);
-			// -------------------------------------
+			try {
+				$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
+					$db_triggers,
+					[
+						'events' => $problems_for_macros,
+						'html' => false
+					]
+				);
+			} catch (\Throwable $e) {
+				// Se falhar a resolução (ex: erro de parse), seguimos sem quebrar o widget
+				// error_log("AlarmWidget OpData Error: " . $e->getMessage());
+				$resolved_opdata = []; 
+			}
 
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
@@ -152,16 +153,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 				
-				// O trigger_info_map agora armazenará apenas dados estruturais
-				// O OpData será pego via EventID mais tarde, pois ele é específico do evento
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					// Fallback raw se falhar a resolução (raro)
 					'raw_opdata' => $trig['opdata'] ?? ''
 				];
 			}
-		} else {
-			$resolved_opdata = [];
 		}
 
 		// 6. Construção Final
@@ -172,12 +168,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
-				// Recupera status seguro do mapa de eventos
 				$status_info = $event_status_map[$eventid] ?? ['sup' => 0, 'ack' => 0];
 				$p_sup = $status_info['sup'];
 				$p_ack = $status_info['ack'];
 
-				// --- FILTRO ONLY SUPPRESSED ---
 				if ($show_suppressed_only == 1 && $p_sup == 0) {
 					continue; 
 				}
@@ -186,7 +180,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
-				// Filtros de Host
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
@@ -196,18 +189,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$name = $problem['name'] ?? _('Unknown problem');
 
 				// Filtro Problem Status
-				// Com show_mode = RECENT, a engine traz tudo. Filtramos aqui.
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-					// Quer resolvido, mas este está ativo (r_eventid == 0) -> Pula
 					if ($r_eventid == 0) continue; 
 				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
-					// Quer problema ativo, mas este está resolvido (r_eventid != 0) -> Pula
 					if ($r_eventid != 0) continue; 
 				}
-				// Se for ALL, não fazemos nada (aceita ambos)
 
-				// OPERATIONAL DATA CORRETO
-				// Tenta pegar o resolvido pelo helper, senão usa o bruto
+				// Tenta pegar o resolvido, senão o bruto
 				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
 
 				$age_seconds = time() - $clock;
@@ -224,10 +212,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
-					
 					'ack_count' => $p_ack,
 					'suppressed' => $p_sup, 
-					'operational_data' => $opdata_final // Valor expandido
+					'operational_data' => $opdata_final
 				];
 			}
 		}
