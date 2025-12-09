@@ -13,14 +13,14 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// Constantes
+		// --- CONFIGURAÇÕES ---
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
 		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
 
-		// 1. Inputs
+		// 1. INPUTS
 		$groupids = $this->fields_values['groupids'] ?? [];
 		$hostids = $this->fields_values['hostids'] ?? [];
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
@@ -28,25 +28,24 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
-		
 		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
-		
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 
-		// 2. Filtros
+		// 2. FILTROS
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
 		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK;
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. Engine Call
+		// 3. ENGINE CALL
+		// show_opdata => 2 para tentar forçar a engine a trazer algo
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -70,7 +69,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. Status Real
+		// 4. STATUS REAL (Problem API)
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -86,76 +85,95 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Trigger + OpData
+		// 5. TRIGGER + OPDATA RESOLVER
 		$trigger_info_map = [];
 		$resolved_opdata = [];
 
 		if (!empty($triggerIds)) {
+			// Busca COMPLETA da trigger
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => 'extend', 
+				'output' => API_OUTPUT_EXTEND, // Pega TUDO
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'selectFunctions' => 'extend',
+				'selectFunctions' => 'extend', // Necessário para macros
 				'preservekeys' => true
 			]);
 
-			// Prepara array de triggers para resolução
-			$triggers_to_resolve = [];
-			foreach ($data['problems'] as $problem) {
-				$triggerid = $problem['objectid'];
-				if (!isset($db_triggers[$triggerid])) continue;
+			// === PREPARAÇÃO MANUAL DO ARRAY PARA O RESOLVER ===
+			// Não confiamos na estrutura que veio do banco. Recriamos.
+			$clean_triggers = [];
+			
+			foreach ($data['problems'] as $p) {
+				$tid = $p['objectid'];
 				
-				// Apenas adiciona se ainda não estiver na lista (evita duplicidade desnecessária, embora o helper aceite)
-				if (!isset($triggers_to_resolve[$triggerid])) {
-					$triggers_to_resolve[$triggerid] = $db_triggers[$triggerid];
+				if (!isset($db_triggers[$tid])) {
+					error_log("DEBUG ALARM: Trigger ID $tid não encontrada no DB_TRIGGERS.");
+					continue;
+				}
+				
+				$raw_trig = $db_triggers[$tid];
+				
+				// Se já processamos essa trigger, pula
+				if (isset($clean_triggers[$tid])) continue;
+
+				// FORÇA AS CHAVES E TIPOS CORRETOS
+				// O helper do Zabbix espera um array onde as chaves sejam: triggerid, expression, etc.
+				$clean_triggers[$tid] = [
+					'triggerid' => (string)$tid, // Força string e garante a chave
+					'expression' => isset($raw_trig['expression']) ? (string)$raw_trig['expression'] : '',
+					'recovery_expression' => isset($raw_trig['recovery_expression']) ? (string)$raw_trig['recovery_expression'] : '',
+					'opdata' => isset($raw_trig['opdata']) ? (string)$raw_trig['opdata'] : '',
+					'priority' => $raw_trig['priority'] ?? '0',
+					'value' => $raw_trig['value'] ?? '0'
+					// Adicione outros campos se necessário, mas estes são os que OpData costuma usar
+				];
+				
+				// Copia funções se existirem (necessário para macros de item)
+				if (isset($raw_trig['functions'])) {
+					$clean_triggers[$tid]['functions'] = $raw_trig['functions'];
 				}
 			}
 
-			// --- HIGIENIZAÇÃO CRÍTICA (CORREÇÃO DO FATAL ERROR) ---
-			// Percorre TODAS as triggers que serão enviadas e força a existência das chaves
-			foreach ($triggers_to_resolve as &$t) {
-				// Garante triggerid
-				if (!isset($t['triggerid']) || $t['triggerid'] === null) {
-					$t['triggerid'] = '0'; 
-				}
-				// Garante expression (Corrige: Argument #1 must be string, null given)
-				if (!isset($t['expression']) || is_null($t['expression'])) {
-					$t['expression'] = '';
-				}
-				// Garante recovery_expression
-				if (!isset($t['recovery_expression']) || is_null($t['recovery_expression'])) {
-					$t['recovery_expression'] = '';
-				}
-				// Garante opdata
-				if (!isset($t['opdata']) || is_null($t['opdata'])) {
-					$t['opdata'] = '';
-				}
-			}
-			unset($t); // Quebra a referência
-			// -----------------------------------------------------
-
+			// Prepara Eventos
 			$problems_for_macros = [];
 			foreach ($data['problems'] as $p) {
-				if (isset($triggers_to_resolve[$p['objectid']])) {
+				if (isset($clean_triggers[$p['objectid']])) {
 					$problems_for_macros[$p['eventid']] = $p;
 				}
 			}
 
+			// --- DEBUG LOGGING ---
+			if (!empty($clean_triggers)) {
+				$first_key = array_key_first($clean_triggers);
+				$first = $clean_triggers[$first_key];
+				error_log("DEBUG ALARM CHECK: Enviando " . count($clean_triggers) . " triggers para resolver.");
+				error_log("DEBUG ALARM CHECK: Exemplo Trigger [$first_key]: Keys=" . implode(',', array_keys($first)));
+				error_log("DEBUG ALARM CHECK: Exemplo Trigger ID Value: '" . $first['triggerid'] . "'");
+				error_log("DEBUG ALARM CHECK: Exemplo Expression Type: " . gettype($first['expression']));
+			} else {
+				error_log("DEBUG ALARM CHECK: Nenhuma trigger limpa para resolver.");
+			}
+			// ---------------------
+
 			try {
-				if (!empty($triggers_to_resolve) && !empty($problems_for_macros)) {
+				if (!empty($clean_triggers) && !empty($problems_for_macros)) {
+					// Chama o helper
 					$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
-						$triggers_to_resolve,
+						$clean_triggers,
 						[
 							'events' => $problems_for_macros,
 							'html' => false
 						]
 					);
+					error_log("DEBUG ALARM SUCCESS: OpData resolvido com sucesso.");
 				}
 			} catch (\Throwable $e) {
-				// error_log("ALARM WIDGET FINAL CATCH: " . $e->getMessage());
+				error_log("DEBUG ALARM CRASH: Erro Fatal no CMacrosResolverHelper: " . $e->getMessage());
+				error_log("DEBUG ALARM CRASH TRACE: " . $e->getTraceAsString());
 				$resolved_opdata = [];
 			}
 
+			// Mapa de Hosts para exibição (usando db_triggers original que tem os hosts)
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -173,7 +191,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 6. Construção Final
+		// 6. CONSTRUÇÃO FINAL
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -205,8 +223,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
-				// Prioriza OpData resolvido
-				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
+				// OpData Final: Prioridade para resolvido, fallback para raw, fallback para string vazia
+				$opdata_final = '';
+				if (isset($resolved_opdata[$eventid])) {
+					$opdata_final = $resolved_opdata[$eventid];
+				} else {
+					$opdata_final = $info['raw_opdata'];
+				}
 
 				$age_seconds = time() - $clock;
 				
