@@ -7,15 +7,11 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
-use CMacrosResolverHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// --- DEBUG INICIAL ---
-		// error_log("DEBUG ALARM: Iniciando Widget...");
-
 		// Constantes de fallback
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
@@ -29,6 +25,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
 		$severities = $this->fields_values['severities'] ?? [];
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
+		
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 		
@@ -38,17 +35,31 @@ class WidgetView extends CControllerDashboardWidgetView {
 		
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
+		
+		// Se "Only" estiver marcado, forçamos a engine a trazer os suprimidos
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
 
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
-		// Colunas
-		$show_columns = []; 
-		// (Mantendo lógica padrão para brevidade no exemplo, assumindo que as colunas sempre existem)
-		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
+		// Configuração de Colunas
+		$show_columns = [];
+		if (!empty($this->fields_values['show_column_host'])) $show_columns[] = 'host';
+		if (!empty($this->fields_values['show_column_severity'])) $show_columns[] = 'severity';
+		if (!empty($this->fields_values['show_column_status'])) $show_columns[] = 'status';
+		if (!empty($this->fields_values['show_column_problem'])) $show_columns[] = 'problem';
+		if (!empty($this->fields_values['show_column_operational_data'])) $show_columns[] = 'operational_data';
+		if (!empty($this->fields_values['show_column_ack'])) $show_columns[] = 'ack';
+		if (!empty($this->fields_values['show_column_age'])) $show_columns[] = 'age';
+		if (!empty($this->fields_values['show_column_time'])) $show_columns[] = 'time';
+		if (empty($show_columns)) {
+			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
+		}
 
-		// 2. Mapeamento de Filtros (Performance: RECENT_PROBLEM)
+		// 2. Mapeamento de Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
+		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+			$show_mode = TRIGGERS_OPTION_ALL; 
+		} 
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -57,7 +68,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. Chamada à Engine Nativa
-		// show_opdata => 2 ajuda a engine a preparar o terreno
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -69,9 +79,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 2 
+			'show_opdata' => 1
 		], $search_limit);
 
+		// Coleta de IDs
 		$triggerIds = [];
 		$eventIds = [];
 		if (!empty($data['problems'])) {
@@ -81,7 +92,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. Hidratação 1: Status Real (Problem API)
+		// 4. Hidratação 1: Status Real do Evento (Problem API)
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -98,56 +109,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Hidratação 2: Trigger + Resolver Macros
+		// 5. Hidratação 2: Dados do Host e OpData (Trigger API)
 		$trigger_info_map = [];
-		$resolved_opdata = [];
-
 		if (!empty($triggerIds)) {
-			// --- DEBUG: LOG ANTES DA API ---
-			// error_log("DEBUG ALARM: Buscando " . count($triggerIds) . " triggers.");
-
-			// *** CORREÇÃO CRUCIAL AQUI: output => API_OUTPUT_EXTEND ***
-			// Sem isso, 'expression' vem faltando e quebra o CMacrosResolverHelper
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => API_OUTPUT_EXTEND, // Traz TODOS os campos (incluindo expression)
+				'output' => ['triggerid', 'opdata'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'selectFunctions' => 'extend', // Necessário para resolver valores de itens
-				'preservekeys' => true
+				'preservekeys' => true,
+				'expandData' => true
 			]);
-
-			// --- DEBUG: VERIFICAR RETORNO ---
-			/*
-			if (!empty($db_triggers)) {
-				$first = reset($db_triggers);
-				error_log("DEBUG ALARM: Trigger ID: " . $first['triggerid'] . 
-						  " | Expression Exists? " . (isset($first['expression']) ? "SIM" : "NÃO"));
-			}
-			*/
-
-			// Preparar array de eventos para o resolver
-			$problems_for_macros = [];
-			foreach ($data['problems'] as $p) {
-				if (isset($db_triggers[$p['objectid']])) {
-					$problems_for_macros[$p['eventid']] = $p;
-				}
-			}
-
-			// Tenta resolver Operational Data
-			try {
-				if (!empty($db_triggers) && !empty($problems_for_macros)) {
-					$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
-						$db_triggers,
-						[
-							'events' => $problems_for_macros,
-							'html' => false
-						]
-					);
-				}
-			} catch (\Throwable $e) {
-				error_log("DEBUG ALARM: Erro Fatal no Resolver OpData: " . $e->getMessage());
-				$resolved_opdata = []; // Fallback seguro
-			}
 
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
@@ -159,10 +130,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
-				
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					'raw_opdata' => $trig['opdata'] ?? '' // Fallback
+					'opdata' => $trig['opdata'] ?? ''
 				];
 			}
 		}
@@ -175,17 +145,21 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
+				// Recupera status seguro do mapa de eventos
 				$status_info = $event_status_map[$eventid] ?? ['sup' => 0, 'ack' => 0];
 				$p_sup = $status_info['sup'];
 				$p_ack = $status_info['ack'];
 
-				// Filtro Only Suppressed
-				if ($show_suppressed_only == 1 && $p_sup == 0) continue; 
+				// --- FILTRO ONLY SUPPRESSED ---
+				if ($show_suppressed_only == 1 && $p_sup == 0) {
+					continue; 
+				}
 
 				if (!isset($trigger_info_map[$triggerid])) continue;
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
+				// Filtros de Host
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
@@ -199,15 +173,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid == 0) continue; 
 				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
 					if ($r_eventid != 0) continue; 
-				}
-
-				// Definir Operational Data
-				// Se tivermos a versão resolvida, usamos. Senão, usamos a bruta.
-				$opdata_final = '';
-				if (isset($resolved_opdata[$eventid])) {
-					$opdata_final = $resolved_opdata[$eventid];
-				} else {
-					$opdata_final = $info['raw_opdata'];
 				}
 
 				$age_seconds = time() - $clock;
@@ -224,9 +189,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
+					
 					'ack_count' => $p_ack,
 					'suppressed' => $p_sup, 
-					'operational_data' => $opdata_final
+					'operational_data' => $info['opdata']
 				];
 			}
 		}
