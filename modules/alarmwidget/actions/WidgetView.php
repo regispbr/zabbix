@@ -7,6 +7,7 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
+use CMacrosResolverHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -49,7 +50,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. Engine Call
-		// show_opdata => 1 (Separately). Vamos ver o que vem.
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -61,24 +61,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 1 
+			'show_opdata' => 2 
 		], $search_limit);
-
-		// --- DEBUG: Inspecionar retorno da Engine ---
-		if (!empty($data['problems'])) {
-			$first = reset($data['problems']);
-			// Loga as chaves disponíveis no primeiro problema
-			error_log("DEBUG ALARM OPDATA: Chaves no problema[0]: " . implode(', ', array_keys($first)));
-			// Loga o valor de opdata se existir
-			if (array_key_exists('opdata', $first)) {
-				error_log("DEBUG ALARM OPDATA: Valor de 'opdata' no problema[0]: '" . $first['opdata'] . "'");
-			} else {
-				error_log("DEBUG ALARM OPDATA: Chave 'opdata' NÃO encontrada no problema[0].");
-			}
-		} else {
-			// error_log("DEBUG ALARM OPDATA: Nenhum problema retornado pela engine.");
-		}
-		// --------------------------------------------
 
 		$triggerIds = [];
 		$eventIds = [];
@@ -105,16 +89,62 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Dados do Host (Sem Trigger API pesada por enquanto)
+		// 5. Trigger + OpData Resolver (Com Sanitização)
 		$trigger_info_map = [];
+		$resolved_opdata = [];
+
 		if (!empty($triggerIds)) {
+			// Busca TUDO da trigger para garantir que temos os campos
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => ['triggerid'], // Leve
+				'output' => API_OUTPUT_EXTEND, 
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
+				'selectFunctions' => 'extend',
 				'preservekeys' => true
 			]);
 
+			// --- SANITIZAÇÃO DE DADOS (CORREÇÃO DO ERRO FATAL) ---
+			// O helper do Zabbix quebra se expression for NULL. Forçamos string.
+			foreach ($db_triggers as &$trig) {
+				if (!isset($trig['expression']) || is_null($trig['expression'])) {
+					$trig['expression'] = '';
+				}
+				if (!isset($trig['recovery_expression']) || is_null($trig['recovery_expression'])) {
+					$trig['recovery_expression'] = '';
+				}
+				// Garante que triggerid existe como chave interna
+				if (!isset($trig['triggerid'])) {
+					$trig['triggerid'] = (string)$trig['triggerid']; 
+				}
+			}
+			unset($trig);
+			// -----------------------------------------------------
+
+			$problems_for_macros = [];
+			foreach ($data['problems'] as $p) {
+				if (isset($db_triggers[$p['objectid']])) {
+					$problems_for_macros[$p['eventid']] = $p;
+				}
+			}
+
+			// Tenta resolver OpData com dados limpos
+			try {
+				if (!empty($db_triggers) && !empty($problems_for_macros)) {
+					$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
+						$db_triggers,
+						[
+							'events' => $problems_for_macros,
+							'html' => false
+						]
+					);
+				}
+			} catch (\Throwable $e) {
+				// Se ainda assim falhar, loga e segue sem quebrar a tela
+				error_log("ALARM WIDGET RESOLVER ERROR: " . $e->getMessage());
+				$resolved_opdata = [];
+			}
+
+			// Prepara mapa de hosts/raw opdata
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -125,11 +155,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
-				$trigger_info_map[$tid] = ['host' => $host_data];
+				
+				$trigger_info_map[$tid] = [
+					'host' => $host_data,
+					'raw_opdata' => $trig['opdata'] ?? ''
+				];
 			}
 		}
 
-		// 6. Construção
+		// 6. Construção Final
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -161,8 +195,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
-				// TENTA PEGAR OPDATA DA ENGINE
-				$opdata_final = $problem['opdata'] ?? ''; 
+				// Usa o dado resolvido se existir, senão o bruto
+				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
 
 				$age_seconds = time() - $clock;
 				
@@ -185,6 +219,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
+		// 7. Ordenação
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
