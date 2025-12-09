@@ -25,6 +25,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
 		$severities = $this->fields_values['severities'] ?? [];
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
+		
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
 		
@@ -48,8 +49,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. Engine Call
-		// show_opdata => 1 (Separately) ou 2 (With name). Tente 1 para ver se vem limpo.
+		// 3. Engine Call (Bruto)
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -61,19 +61,28 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 1 
+			'show_opdata' => 1 // Importante: Pedir dados para OpData
 		], $search_limit);
 
-		$triggerIds = [];
+		// --- MÁGICA: Processar OpData e Macros igual ao Nativo ---
+		// Esta função expande macros, resolve opdata e formata o array
+		$data = CScreenProblem::makeData($data, [
+			'show' => $show_mode,
+			'details' => 0,
+			'show_opdata' => 1 // 1=Separately
+		]);
+		// ---------------------------------------------------------
+
+		// 4. Status Real (Problem API)
+		// Ainda precisamos disso para garantir status 'suppressed' atualizado,
+		// pois makeData pode não trazer tudo se o evento for muito recente.
 		$eventIds = [];
 		if (!empty($data['problems'])) {
 			foreach ($data['problems'] as $problem) {
-				$triggerIds[] = $problem['objectid'];
 				$eventIds[] = $problem['eventid'];
 			}
 		}
 
-		// 4. Status Real
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -89,12 +98,18 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Dados do Host (Sem Trigger API pesada)
+		// 5. Dados do Host (Agora podemos pegar o nome do host direto de $data['triggers_hosts'] se quisermos,
+		// mas para manter sua estrutura de host excluido, vamos buscar leve)
+		// Nota: makeData já traz nomes de hosts em $data['triggers_hosts'] se otimizado, 
+		// mas vamos manter sua lógica de exclusão por segurança.
+		$triggerIds = [];
+		foreach ($data['problems'] as $p) $triggerIds[] = $p['objectid'];
+		
 		$trigger_info_map = [];
 		if (!empty($triggerIds)) {
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => ['triggerid'], // Leve
+				'output' => ['triggerid'], // Apenas ID, OpData já veio no makeData
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
 				'preservekeys' => true
 			]);
@@ -113,7 +128,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 6. Construção
+		// 6. Construção Final
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -145,8 +160,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
-				// TENTA PEGAR OPDATA DA ENGINE
-				// A CScreenProblem::getData deve popular isso se show_opdata > 0
+				// PEGA O OPDATA PROCESSADO PELO makeData
+				// A função makeData popula o campo 'opdata' dentro de cada problema
 				$opdata_final = $problem['opdata'] ?? ''; 
 
 				$age_seconds = time() - $clock;
@@ -170,6 +185,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
+		// 7. Ordenação
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
