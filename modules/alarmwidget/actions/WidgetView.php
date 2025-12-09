@@ -44,8 +44,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. ENGINE CALL
-		// show_opdata => 2 para garantir que a engine traga todos os dados de trigger/recuperação
-		// (mesmo que a gente ignore o texto gerado por ela depois)
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -85,11 +83,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. RESOLUÇÃO MANUAL DE OPDATA
+		// 5. RESOLUÇÃO MANUAL
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
-			// A) Buscar Triggers
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata', 'expression', 'description'],
@@ -98,7 +95,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'preservekeys' => true
 			]);
 
-			// B) Coleta Item IDs
 			$itemIds = [];
 			foreach ($db_triggers as $trig) {
 				if (!empty($trig['functions'])) {
@@ -108,18 +104,17 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// C) Busca Itens
 			$db_items = [];
 			if (!empty($itemIds)) {
 				$db_items = API::Item()->get([
 					'itemids' => $itemIds,
 					'output' => ['itemid', 'name', 'lastvalue', 'units', 'value_type', 'valuemapid'],
 					'selectValueMap' => ['mappings'],
+					'webitems' => true, // <--- CRUCIAL PARA O "High Response Time"
 					'preservekeys' => true
 				]);
 			}
 
-			// D) Processamento
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -131,10 +126,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
+				// Formatação
 				$format_item_value = function($item) {
 					$raw_val = $item['lastvalue'];
 					
-					// 1. Tenta ValueMap
+					// 1. ValueMap Manual
 					if (isset($item['valuemap']['mappings']) && is_array($item['valuemap']['mappings'])) {
 						foreach ($item['valuemap']['mappings'] as $map) {
 							if ($map['value'] == $raw_val) {
@@ -143,7 +139,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 						}
 					}
 
-					// 2. Fallback Formatação
+					// 2. Formatação Nativa
 					$item_clean = $item;
 					$item_clean['valuemap'] = []; 
 					return formatHistoryValue($raw_val, $item_clean);
@@ -215,16 +211,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// --- LÓGICA DE STATUS ROBUSTA ---
+				// --- LÓGICA DE STATUS ---
 				$r_eventid = isset($problem['r_eventid']) ? (int)$problem['r_eventid'] : 0;
 				$r_clock = isset($problem['r_clock']) ? (int)$problem['r_clock'] : 0;
-				
-				// Se tem ID de recuperação ou Data de recuperação, está resolvido
 				$is_resolved = ($r_eventid != 0) || ($r_clock != 0);
 
-				// Log se o problema for "VPN SBCP" para debug (pode remover depois)
-				if (strpos($problem['name'] ?? '', 'VPN SBCP') !== false) {
-					error_log("DEBUG STATUS: ID=$eventid | r_eventid=$r_eventid | r_clock=$r_clock | DECISION=" . ($is_resolved ? 'RESOLVED' : 'PROBLEM'));
+				// --- LOG SEM FILTRO (Agora pega tudo) ---
+				// Loga apenas se tiver recuperação para não poluir demais, ou loga tudo se quiser ver
+				if ($is_resolved) {
+					error_log("DEBUG STATUS: EVENT=$eventid | R_EVENTID=$r_eventid | R_CLOCK=$r_clock | STATUS=RESOLVED");
 				}
 
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
@@ -239,7 +234,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 				$opdata_final = $info['opdata']; 
 
-				// Se resolvido, a idade é fixa (duração). Se não, é dinâmico.
 				if ($is_resolved) {
 					$age_seconds = $r_clock - $clock;
 				} else {
@@ -251,7 +245,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'objectid' => $triggerid,
 					'name' => $name,
 					'severity' => $severity,
-					'status' => $is_resolved ? 'RESOLVED' : 'PROBLEM', // Status textual
+					'status' => $is_resolved ? 'RESOLVED' : 'PROBLEM',
 					'clock' => $clock,
 					'time' => date('d M Y H:i:s', $clock),
 					'age' => $this->formatAge($age_seconds),
@@ -265,7 +259,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 7. ORDENAÇÃO
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
