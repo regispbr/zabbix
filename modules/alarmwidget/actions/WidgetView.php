@@ -55,7 +55,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 // Manual completo
+			'show_opdata' => 0 
 		], $search_limit);
 
 		$triggerIds = [];
@@ -83,11 +83,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. RESOLUÇÃO MANUAL DE OPDATA (PREMIUM)
+		// 5. RESOLUÇÃO MANUAL DE OPDATA
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
-			// A) Buscar Triggers
+			// A) Triggers
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata', 'expression', 'description'],
@@ -96,7 +96,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'preservekeys' => true
 			]);
 
-			// B) Coleta Item IDs
+			// B) Item IDs
 			$itemIds = [];
 			foreach ($db_triggers as $trig) {
 				if (!empty($trig['functions'])) {
@@ -106,7 +106,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// C) Busca Itens + ValueMapID
+			// C) Itens + ValuemapID
 			$db_items = [];
 			$valuemapIds = [];
 			if (!empty($itemIds)) {
@@ -123,21 +123,25 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// D) Busca ValueMaps (A Mágica do "down (1)")
+			// D) ValueMaps (Correção: output extendido)
 			$db_valuemaps = [];
 			if (!empty($valuemapIds)) {
-				$valuemaps_raw = API::ValueMap()->get([
-					'valuemapids' => array_keys($valuemapIds),
-					'output' => ['valuemapid', 'mappings'],
-					'preservekeys' => true
-				]);
-				// Reorganiza para acesso rápido
-				foreach ($valuemaps_raw as $vmap) {
-					$db_valuemaps[$vmap['valuemapid']] = $vmap['mappings'];
+				try {
+					$valuemaps_raw = API::ValueMap()->get([
+						'valuemapids' => array_keys($valuemapIds),
+						'output' => 'extend', // GARANTE QUE FUNCIONE
+						'preservekeys' => true
+					]);
+					foreach ($valuemaps_raw as $id => $vmap) {
+						$db_valuemaps[$id] = $vmap['mappings'];
+					}
+				} catch (\Exception $e) {
+					// Se falhar, segue sem mapeamento
+					$db_valuemaps = [];
 				}
 			}
 
-			// E) Processamento Final
+			// E) Processamento
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -151,7 +155,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 				$resolved_opdata = $trig['opdata'];
 				
-				// CENÁRIO 1: OpData está configurado na Trigger (Tem Macros)
+				// CENÁRIO 1: OpData configurado
 				if (!empty($resolved_opdata) && !empty($trig['functions'])) {
 					$resolved_opdata = preg_replace_callback('/\{ITEM\.(?:LAST)?VALUE(\d*)\}/', 
 						function($matches) use ($trig, $db_items, $db_valuemaps) {
@@ -163,7 +167,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 								if (isset($db_items[$itemid])) {
 									$item = $db_items[$itemid];
 									
-									// Injeta o ValueMap se existir
+									// Mapeamento
 									if ($item['valuemapid'] != 0 && isset($db_valuemaps[$item['valuemapid']])) {
 										$item['valuemap'] = $db_valuemaps[$item['valuemapid']];
 									} else {
@@ -178,10 +182,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 						$resolved_opdata
 					);
 				}
-				// CENÁRIO 2: OpData Vazio (Fallback para lista de itens)
+				// CENÁRIO 2: OpData Vazio (Fallback)
 				else if (empty($resolved_opdata) && !empty($trig['functions'])) {
 					$opdata_parts = [];
-					// Limita a 3 itens para não poluir, ou mostra todos
 					foreach ($trig['functions'] as $func) {
 						$itemid = $func['itemid'];
 						if (isset($db_items[$itemid])) {
@@ -193,19 +196,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 								$item['valuemap'] = [];
 							}
 							
-							// Formato: "Nome: Valor" ou apenas "Valor" se for único?
-							// O nativo mostra "Valor" se tiver unidade, ou mapeado.
-							// Vamos usar "Nome: Valor" para clareza se houver espaço, ou só valor.
-							// O nativo geralmente mostra apenas o valor formatado entre parênteses se for parte do nome,
-							// mas no OpData column ele lista.
 							$formatted_val = formatHistoryValue($item['lastvalue'], $item);
+							// Mostra "Nome: Valor" para contexto
 							$opdata_parts[] = $item['name'] . ': ' . $formatted_val;
 						}
 					}
-					// Se ficou muito grande, pega só o primeiro ou quebra linha? 
-					// Vamos juntar com ", "
+					// Remove duplicatas e junta
 					if (!empty($opdata_parts)) {
-						// Remove duplicatas se houver funções repetidas para o mesmo item
 						$opdata_parts = array_unique($opdata_parts);
 						$resolved_opdata = implode(', ', $opdata_parts);
 					}
