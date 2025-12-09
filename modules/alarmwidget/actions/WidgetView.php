@@ -7,6 +7,7 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
+use CMacrosResolverHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -36,30 +37,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		
-		// Se "Only" estiver marcado, forçamos a engine a trazer os suprimidos
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
 
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
 		// Configuração de Colunas
-		$show_columns = [];
-		if (!empty($this->fields_values['show_column_host'])) $show_columns[] = 'host';
-		if (!empty($this->fields_values['show_column_severity'])) $show_columns[] = 'severity';
-		if (!empty($this->fields_values['show_column_status'])) $show_columns[] = 'status';
-		if (!empty($this->fields_values['show_column_problem'])) $show_columns[] = 'problem';
-		if (!empty($this->fields_values['show_column_operational_data'])) $show_columns[] = 'operational_data';
-		if (!empty($this->fields_values['show_column_ack'])) $show_columns[] = 'ack';
-		if (!empty($this->fields_values['show_column_age'])) $show_columns[] = 'age';
-		if (!empty($this->fields_values['show_column_time'])) $show_columns[] = 'time';
-		if (empty($show_columns)) {
-			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
-		}
+		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 
 		// 2. Mapeamento de Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
-		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-			$show_mode = TRIGGERS_OPTION_ALL; 
-		} 
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -79,10 +65,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 1
+			'show_opdata' => 2 
 		], $search_limit);
 
-		// Coleta de IDs
 		$triggerIds = [];
 		$eventIds = [];
 		if (!empty($data['problems'])) {
@@ -92,7 +77,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. Hidratação 1: Status Real do Evento (Problem API)
+		// 4. Hidratação 1: Status Real (Problem API)
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -109,18 +94,69 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Hidratação 2: Dados do Host e OpData (Trigger API)
+		// 5. Hidratação 2: Trigger + Resolver Macros
 		$trigger_info_map = [];
+		$resolved_opdata = [];
+
 		if (!empty($triggerIds)) {
+			// Solicitamos campos explícitos para evitar ambiguidade
 			$db_triggers = API::Trigger()->get([
+				'triggerids' => $triggerIds,
+				'output' => ['triggerid', 'expression', 'recovery_expression', 'opdata', 'priority', 'description', 'value'],
+				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
+				'selectFunctions' => 'extend',
+				'preservekeys' => true
+			]);
+
+			// === SANITIZAÇÃO DE DADOS (CRÍTICO) ===
+			// Filtra triggers inválidas/corrompidas que causariam Fatal Error no CMacrosResolverHelper
+			foreach ($db_triggers as $id => $trig) {
+				if (
+					!isset($trig['triggerid']) || 
+					!isset($trig['expression']) || $trig['expression'] === null || 
+					!isset($trig['recovery_expression'])
+				) {
+					// Trigger defeituosa encontrada, removemos do array para não quebrar o widget
+					unset($db_triggers[$id]);
+				}
+			}
+			// ======================================
+
+			$problems_for_macros = [];
+			foreach ($data['problems'] as $p) {
+				// Só adicionamos se a trigger ainda existir após a sanitização
+				if (isset($db_triggers[$p['objectid']])) {
+					$problems_for_macros[$p['eventid']] = $p;
+				}
+			}
+
+			// Chamada Protegida
+			try {
+				if (!empty($db_triggers)) {
+					$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
+						$db_triggers,
+						[
+							'events' => $problems_for_macros,
+							'html' => false
+						]
+					);
+				}
+			} catch (\Throwable $e) {
+				// Se ainda assim der erro, capturamos e usamos array vazio
+				// error_log("AlarmWidget Fatal: " . $e->getMessage());
+				$resolved_opdata = []; 
+			}
+
+			// Loop final para popular o mapa de informações
+			// Nota: Usamos triggersIds original para garantir que temos dados de host mesmo se a macro falhou
+			$all_triggers_raw = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'preservekeys' => true,
-				'expandData' => true
+				'preservekeys' => true
 			]);
 
-			foreach ($db_triggers as $tid => $trig) {
+			foreach ($all_triggers_raw as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
 					$first_host = reset($trig['hosts']);
@@ -130,9 +166,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
+				
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					'opdata' => $trig['opdata'] ?? ''
+					'raw_opdata' => $trig['opdata'] ?? ''
 				];
 			}
 		}
@@ -145,21 +182,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
-				// Recupera status seguro do mapa de eventos
 				$status_info = $event_status_map[$eventid] ?? ['sup' => 0, 'ack' => 0];
 				$p_sup = $status_info['sup'];
 				$p_ack = $status_info['ack'];
 
-				// --- FILTRO ONLY SUPPRESSED ---
-				if ($show_suppressed_only == 1 && $p_sup == 0) {
-					continue; 
-				}
+				if ($show_suppressed_only == 1 && $p_sup == 0) continue; 
 
 				if (!isset($trigger_info_map[$triggerid])) continue;
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
-				// Filtros de Host
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
@@ -175,6 +207,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
+				// Tenta usar o OpData resolvido; se não existir, usa o bruto
+				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
+
 				$age_seconds = time() - $clock;
 				
 				$problems_final[] = [
@@ -189,10 +224,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
-					
 					'ack_count' => $p_ack,
 					'suppressed' => $p_sup, 
-					'operational_data' => $info['opdata']
+					'operational_data' => $opdata_final
 				];
 			}
 		}
