@@ -12,62 +12,38 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// Constantes de fallback
+		// --- CONFIGURAÇÕES ---
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
 		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
 
-		// 1. Coleta de Filtros
+		// 1. INPUTS
 		$groupids = $this->fields_values['groupids'] ?? [];
 		$hostids = $this->fields_values['hostids'] ?? [];
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
 		$severities = $this->fields_values['severities'] ?? [];
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
-		
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
-		
 		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
-		
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
-		
-		// Se "Only" estiver marcado, forçamos a engine a trazer os suprimidos
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
-
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
+		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 
-		// Configuração de Colunas
-		$show_columns = [];
-		if (!empty($this->fields_values['show_column_host'])) $show_columns[] = 'host';
-		if (!empty($this->fields_values['show_column_severity'])) $show_columns[] = 'severity';
-		if (!empty($this->fields_values['show_column_status'])) $show_columns[] = 'status';
-		if (!empty($this->fields_values['show_column_problem'])) $show_columns[] = 'problem';
-		if (!empty($this->fields_values['show_column_operational_data'])) $show_columns[] = 'operational_data';
-		if (!empty($this->fields_values['show_column_ack'])) $show_columns[] = 'ack';
-		if (!empty($this->fields_values['show_column_age'])) $show_columns[] = 'age';
-		if (!empty($this->fields_values['show_column_time'])) $show_columns[] = 'time';
-		if (empty($show_columns)) {
-			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
-		}
-
-		// 2. Mapeamento de Filtros
+		// 2. FILTROS
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
-		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-			$show_mode = TRIGGERS_OPTION_ALL; 
-		} 
-
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
 		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK;
-
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. Chamada à Engine Nativa
+		// 3. ENGINE CALL
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -79,10 +55,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 1
+			'show_opdata' => 0 // Manual
 		], $search_limit);
 
-		// Coleta de IDs
 		$triggerIds = [];
 		$eventIds = [];
 		if (!empty($data['problems'])) {
@@ -92,7 +67,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. Hidratação 1: Status Real do Evento (Problem API)
+		// 4. STATUS REAL
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -100,7 +75,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'output' => ['eventid', 'suppressed', 'acknowledged'],
 				'preservekeys' => true
 			]);
-			
 			foreach ($db_problems as $eid => $prob) {
 				$event_status_map[$eid] = [
 					'sup' => (int)$prob['suppressed'],
@@ -109,16 +83,38 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Hidratação 2: Dados do Host e OpData (Trigger API)
+		// 5. RESOLUÇÃO MANUAL DE OPDATA
 		$trigger_info_map = [];
+		
 		if (!empty($triggerIds)) {
+			// Busca triggers
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => ['triggerid', 'opdata'],
+				'output' => ['triggerid', 'opdata', 'expression'],
+				'selectFunctions' => ['function', 'parameter', 'itemid'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'preservekeys' => true,
-				'expandData' => true
+				'preservekeys' => true
 			]);
+
+			// Coleta Item IDs
+			$itemIds = [];
+			foreach ($db_triggers as $trig) {
+				if (!empty($trig['opdata']) && !empty($trig['functions'])) {
+					foreach ($trig['functions'] as $func) {
+						$itemIds[] = $func['itemid'];
+					}
+				}
+			}
+
+			// Busca itens com dados suficientes para formatação
+			$db_items = [];
+			if (!empty($itemIds)) {
+				$db_items = API::Item()->get([
+					'itemids' => $itemIds,
+					'output' => ['itemid', 'lastvalue', 'units', 'value_type', 'valuemapid'], // valuemapid importante
+					'preservekeys' => true
+				]);
+			}
 
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
@@ -130,14 +126,43 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
+
+				// Lógica de substituição manual
+				$resolved_opdata = $trig['opdata'];
+				
+				if (!empty($resolved_opdata) && !empty($trig['functions'])) {
+					// Regex para {ITEM.LASTVALUE<N>} ou {ITEM.VALUE<N>}
+					$resolved_opdata = preg_replace_callback('/\{ITEM\.(?:LAST)?VALUE(\d*)\}/', function($matches) use ($trig, $db_items) {
+						$index = (int)($matches[1] === '' ? 1 : $matches[1]);
+						$func_index = $index - 1; 
+						
+						if (isset($trig['functions'][$func_index])) {
+							$itemid = $trig['functions'][$func_index]['itemid'];
+							if (isset($db_items[$itemid])) {
+								$item = $db_items[$itemid];
+								
+								// --- CORREÇÃO DO FATAL ERROR ---
+								// O formatHistoryValue exige 'valuemap' como array, mesmo vazio.
+								if (!isset($item['valuemap'])) {
+									$item['valuemap'] = [];
+								}
+								// -------------------------------
+
+								return formatHistoryValue($item['lastvalue'], $item);
+							}
+						}
+						return $matches[0];
+					}, $resolved_opdata);
+				}
+
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					'opdata' => $trig['opdata'] ?? ''
+					'opdata' => $resolved_opdata
 				];
 			}
 		}
 
-		// 6. Construção Final
+		// 6. CONSTRUÇÃO FINAL
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -145,21 +170,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
-				// Recupera status seguro do mapa de eventos
 				$status_info = $event_status_map[$eventid] ?? ['sup' => 0, 'ack' => 0];
 				$p_sup = $status_info['sup'];
 				$p_ack = $status_info['ack'];
 
-				// --- FILTRO ONLY SUPPRESSED ---
-				if ($show_suppressed_only == 1 && $p_sup == 0) {
-					continue; 
-				}
+				if ($show_suppressed_only == 1 && $p_sup == 0) continue; 
 
 				if (!isset($trigger_info_map[$triggerid])) continue;
 				$info = $trigger_info_map[$triggerid];
 				$host_info = $info['host'];
 
-				// Filtros de Host
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
@@ -168,12 +188,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$severity = (int)($problem['severity'] ?? 0);
 				$name = $problem['name'] ?? _('Unknown problem');
 
-				// Filtro Problem Status
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
 					if ($r_eventid == 0) continue; 
 				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
 					if ($r_eventid != 0) continue; 
 				}
+
+				$opdata_final = $info['opdata']; 
 
 				$age_seconds = time() - $clock;
 				
@@ -189,15 +210,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
-					
 					'ack_count' => $p_ack,
 					'suppressed' => $p_sup, 
-					'operational_data' => $info['opdata']
+					'operational_data' => $opdata_final
 				];
 			}
 		}
 
-		// 7. Ordenação
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
