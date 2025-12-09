@@ -1,17 +1,4 @@
 <?php declare(strict_types = 0);
-/*
-** Copyright (C) 2001-2025 Zabbix SIA
-**
-** This program is free software: you can redistribute it and/or modify it under the terms of
-** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
-**
-** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
-** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-** See the GNU Affero General Public License for more details.
-**
-** You should have received a copy of the GNU Affero General Public License along with this program.
-** If not, see <https://www.gnu.org/licenses/>.
-**/
 
 namespace Modules\AlarmWidget\Actions;
 
@@ -20,20 +7,19 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
-use CMacrosResolverHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// --- CONFIGURAÇÕES BÁSICAS ---
+		// Constantes
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
 		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
 
-		// 1. INPUTS
+		// 1. Inputs
 		$groupids = $this->fields_values['groupids'] ?? [];
 		$hostids = $this->fields_values['hostids'] ?? [];
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
@@ -41,18 +27,20 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
+		
 		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
+		
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
-		
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
+
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 
 		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 
-		// 2. ENGINE CALL
+		// 2. Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -60,6 +48,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
+		// 3. Engine Call
+		// show_opdata => 1 (Separately) ou 2 (With name). Tente 1 para ver se vem limpo.
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -71,7 +61,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 2 
+			'show_opdata' => 1 
 		], $search_limit);
 
 		$triggerIds = [];
@@ -83,7 +73,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 3. EVENT STATUS MAP
+		// 4. Status Real
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -99,57 +89,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. TRIGGER + MACRO DEBUG
+		// 5. Dados do Host (Sem Trigger API pesada)
 		$trigger_info_map = [];
-		$resolved_opdata = [];
-
 		if (!empty($triggerIds)) {
-			// Busca COMPLETA para debug
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => 'extend', 
+				'output' => ['triggerid'], // Leve
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'selectFunctions' => 'extend',
 				'preservekeys' => true
 			]);
-
-			$problems_for_macros = [];
-			foreach ($data['problems'] as $p) {
-				if (isset($db_triggers[$p['objectid']])) {
-					$problems_for_macros[$p['eventid']] = $p;
-				}
-			}
-
-			// --- ÁREA DE DEBUG CRÍTICA ---
-			// Vamos inspecionar o primeiro item para ver se está faltando algo
-			if (!empty($db_triggers)) {
-				$sample_trigger_id = array_key_first($db_triggers);
-				$sample_trigger = $db_triggers[$sample_trigger_id];
-				
-				// Loga as chaves da trigger para vermos se 'expression' e 'triggerid' existem
-				error_log("DEBUG_ALARM_DUMP: Chaves da Trigger [$sample_trigger_id]: " . implode(', ', array_keys($sample_trigger)));
-				
-				// Verifica especificamente expression
-				$expr_type = gettype($sample_trigger['expression'] ?? null);
-				$expr_val = $sample_trigger['expression'] ?? 'MISSING';
-				error_log("DEBUG_ALARM_DUMP: Trigger Expression Type: $expr_type | Value: " . substr((string)$expr_val, 0, 50) . "...");
-			}
-			// -----------------------------
-
-			try {
-				// Tenta resolver. Se falhar, vai pro catch e NÃO quebra a tela.
-				$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
-					$db_triggers,
-					[
-						'events' => $problems_for_macros,
-						'html' => false
-					]
-				);
-			} catch (\Throwable $e) {
-				error_log("DEBUG_ALARM_DUMP: ERRO NO RESOLVER: " . $e->getMessage());
-				error_log("DEBUG_ALARM_DUMP: Stack Trace resumido: " . $e->getFile() . ":" . $e->getLine());
-				$resolved_opdata = []; // Continua vazio para não quebrar
-			}
 
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
@@ -161,14 +109,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
-				$trigger_info_map[$tid] = [
-					'host' => $host_data,
-					'raw_opdata' => $trig['opdata'] ?? ''
-				];
+				$trigger_info_map[$tid] = ['host' => $host_data];
 			}
 		}
 
-		// 5. CONSTRUÇÃO FINAL
+		// 6. Construção
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -200,8 +145,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
-				// Se tivermos a resolução, usa. Se não (por erro), usa o raw.
-				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
+				// TENTA PEGAR OPDATA DA ENGINE
+				// A CScreenProblem::getData deve popular isso se show_opdata > 0
+				$opdata_final = $problem['opdata'] ?? ''; 
 
 				$age_seconds = time() - $clock;
 				
