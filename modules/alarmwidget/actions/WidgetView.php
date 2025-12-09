@@ -7,7 +7,6 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
-use CMacrosResolverHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -45,7 +44,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. ENGINE CALL
-		// show_opdata => 2 para tentar forçar a engine a trazer algo
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -57,7 +55,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 2 
+			'show_opdata' => 0 // Desativamos na engine para economizar, faremos manual
 		], $search_limit);
 
 		$triggerIds = [];
@@ -69,7 +67,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. STATUS REAL (Problem API)
+		// 4. STATUS REAL
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -85,95 +83,40 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. TRIGGER + OPDATA RESOLVER
+		// 5. RESOLUÇÃO MANUAL DE OPDATA
 		$trigger_info_map = [];
-		$resolved_opdata = [];
-
+		
 		if (!empty($triggerIds)) {
-			// Busca COMPLETA da trigger
+			// Busca Triggers com Funções para saber os Item IDs
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => API_OUTPUT_EXTEND, // Pega TUDO
+				'output' => ['triggerid', 'opdata', 'expression'],
+				'selectFunctions' => ['function', 'parameter', 'itemid'], // Pega os itens da trigger
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'selectFunctions' => 'extend', // Necessário para macros
 				'preservekeys' => true
 			]);
 
-			// === PREPARAÇÃO MANUAL DO ARRAY PARA O RESOLVER ===
-			// Não confiamos na estrutura que veio do banco. Recriamos.
-			$clean_triggers = [];
-			
-			foreach ($data['problems'] as $p) {
-				$tid = $p['objectid'];
-				
-				if (!isset($db_triggers[$tid])) {
-					error_log("DEBUG ALARM: Trigger ID $tid não encontrada no DB_TRIGGERS.");
-					continue;
-				}
-				
-				$raw_trig = $db_triggers[$tid];
-				
-				// Se já processamos essa trigger, pula
-				if (isset($clean_triggers[$tid])) continue;
-
-				// FORÇA AS CHAVES E TIPOS CORRETOS
-				// O helper do Zabbix espera um array onde as chaves sejam: triggerid, expression, etc.
-				$clean_triggers[$tid] = [
-					'triggerid' => (string)$tid, // Força string e garante a chave
-					'expression' => isset($raw_trig['expression']) ? (string)$raw_trig['expression'] : '',
-					'recovery_expression' => isset($raw_trig['recovery_expression']) ? (string)$raw_trig['recovery_expression'] : '',
-					'opdata' => isset($raw_trig['opdata']) ? (string)$raw_trig['opdata'] : '',
-					'priority' => $raw_trig['priority'] ?? '0',
-					'value' => $raw_trig['value'] ?? '0'
-					// Adicione outros campos se necessário, mas estes são os que OpData costuma usar
-				];
-				
-				// Copia funções se existirem (necessário para macros de item)
-				if (isset($raw_trig['functions'])) {
-					$clean_triggers[$tid]['functions'] = $raw_trig['functions'];
+			// Coleta todos os Item IDs necessários para o OpData
+			$itemIds = [];
+			foreach ($db_triggers as $trig) {
+				if (!empty($trig['opdata']) && !empty($trig['functions'])) {
+					foreach ($trig['functions'] as $func) {
+						$itemIds[] = $func['itemid'];
+					}
 				}
 			}
 
-			// Prepara Eventos
-			$problems_for_macros = [];
-			foreach ($data['problems'] as $p) {
-				if (isset($clean_triggers[$p['objectid']])) {
-					$problems_for_macros[$p['eventid']] = $p;
-				}
+			// Busca os valores dos itens
+			$db_items = [];
+			if (!empty($itemIds)) {
+				$db_items = API::Item()->get([
+					'itemids' => $itemIds,
+					'output' => ['itemid', 'lastvalue', 'units', 'value_type'],
+					'preservekeys' => true
+				]);
 			}
 
-			// --- DEBUG LOGGING ---
-			if (!empty($clean_triggers)) {
-				$first_key = array_key_first($clean_triggers);
-				$first = $clean_triggers[$first_key];
-				error_log("DEBUG ALARM CHECK: Enviando " . count($clean_triggers) . " triggers para resolver.");
-				error_log("DEBUG ALARM CHECK: Exemplo Trigger [$first_key]: Keys=" . implode(',', array_keys($first)));
-				error_log("DEBUG ALARM CHECK: Exemplo Trigger ID Value: '" . $first['triggerid'] . "'");
-				error_log("DEBUG ALARM CHECK: Exemplo Expression Type: " . gettype($first['expression']));
-			} else {
-				error_log("DEBUG ALARM CHECK: Nenhuma trigger limpa para resolver.");
-			}
-			// ---------------------
-
-			try {
-				if (!empty($clean_triggers) && !empty($problems_for_macros)) {
-					// Chama o helper
-					$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
-						$clean_triggers,
-						[
-							'events' => $problems_for_macros,
-							'html' => false
-						]
-					);
-					error_log("DEBUG ALARM SUCCESS: OpData resolvido com sucesso.");
-				}
-			} catch (\Throwable $e) {
-				error_log("DEBUG ALARM CRASH: Erro Fatal no CMacrosResolverHelper: " . $e->getMessage());
-				error_log("DEBUG ALARM CRASH TRACE: " . $e->getTraceAsString());
-				$resolved_opdata = [];
-			}
-
-			// Mapa de Hosts para exibição (usando db_triggers original que tem os hosts)
+			// Resolve OpData manualmente
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -184,9 +127,35 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
+
+				// Lógica de substituição manual
+				$resolved_opdata = $trig['opdata'];
+				
+				if (!empty($resolved_opdata) && !empty($trig['functions'])) {
+					// Mapeia {ITEM.LASTVALUE1}, {ITEM.VALUE1}, etc.
+					// O índice 1 refere-se à primeira função no array de functions?
+					// Zabbix functions geralmente vêm ordenadas.
+					// Vamos tentar substituir as macros comuns.
+					
+					// Regex para achar {ITEM.LASTVALUE<N>} ou {ITEM.VALUE<N>}
+					$resolved_opdata = preg_replace_callback('/\{ITEM\.(?:LAST)?VALUE(\d*)\}/', function($matches) use ($trig, $db_items) {
+						$index = (int)($matches[1] === '' ? 1 : $matches[1]);
+						$func_index = $index - 1; // Array 0-based
+						
+						if (isset($trig['functions'][$func_index])) {
+							$itemid = $trig['functions'][$func_index]['itemid'];
+							if (isset($db_items[$itemid])) {
+								$item = $db_items[$itemid];
+								return formatHistoryValue($item['lastvalue'], $item); // Formata com unidade
+							}
+						}
+						return $matches[0]; // Não achou, mantém a macro
+					}, $resolved_opdata);
+				}
+
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					'raw_opdata' => $trig['opdata'] ?? ''
+					'opdata' => $resolved_opdata
 				];
 			}
 		}
@@ -223,13 +192,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
-				// OpData Final: Prioridade para resolvido, fallback para raw, fallback para string vazia
-				$opdata_final = '';
-				if (isset($resolved_opdata[$eventid])) {
-					$opdata_final = $resolved_opdata[$eventid];
-				} else {
-					$opdata_final = $info['raw_opdata'];
-				}
+				$opdata_final = $info['opdata']; // Usamos o nosso manual
 
 				$age_seconds = time() - $clock;
 				
