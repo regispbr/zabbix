@@ -12,7 +12,7 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// --- CONFIGURAÇÕES ---
+		// --- CONFIGURAÇÕES BÁSICAS ---
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
@@ -55,7 +55,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 // Manual completo
+			'show_opdata' => 0 
 		], $search_limit);
 
 		$triggerIds = [];
@@ -83,7 +83,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. RESOLUÇÃO MANUAL DE OPDATA (ESTILO ITEM VALUE)
+		// 5. DEBUG E RESOLUÇÃO MANUAL
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
@@ -106,15 +106,33 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// C) Busca Itens COMPLETOS (Com ValueMap embutido)
+			// C) Busca Itens
 			$db_items = [];
 			if (!empty($itemIds)) {
 				$db_items = API::Item()->get([
 					'itemids' => $itemIds,
 					'output' => ['itemid', 'name', 'lastvalue', 'units', 'value_type', 'valuemapid'],
-					'selectValueMap' => ['mappings'], // <--- O SEGREDO DO WIDGET NATIVO
+					'selectValueMap' => ['mappings'], 
 					'preservekeys' => true
 				]);
+
+				// --- DEBUG START ---
+				if (!empty($db_items)) {
+					$first_item = reset($db_items);
+					error_log("DEBUG ALARM ITEM: Chaves do Item: " . implode(', ', array_keys($first_item)));
+					if (isset($first_item['valuemap'])) {
+						error_log("DEBUG ALARM ITEM: Valuemap existe. Tipo: " . gettype($first_item['valuemap']));
+						if (is_array($first_item['valuemap'])) {
+							error_log("DEBUG ALARM ITEM: Valuemap Keys: " . implode(', ', array_keys($first_item['valuemap'])));
+							if (isset($first_item['valuemap']['mappings'])) {
+								error_log("DEBUG ALARM ITEM: Mappings count: " . count($first_item['valuemap']['mappings']));
+							}
+						}
+					} else {
+						error_log("DEBUG ALARM ITEM: Valuemap NÃO existe.");
+					}
+				}
+				// --- DEBUG END ---
 			}
 
 			// D) Processamento
@@ -131,27 +149,28 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 				$resolved_opdata = $trig['opdata'];
 				
-				// CENÁRIO 1: OpData Configurado (Substitui Macros)
+				// Helper function para formatar
+				$formatItem = function($item) {
+					// Adaptação da estrutura
+					if (isset($item['valuemap']['mappings'])) {
+						$item['valuemap'] = $item['valuemap']['mappings'];
+					} else {
+						$item['valuemap'] = [];
+					}
+					return formatHistoryValue($item['lastvalue'], $item);
+				};
+
+				// CENÁRIO 1: OpData Configurado
 				if (!empty($resolved_opdata) && !empty($trig['functions'])) {
 					$resolved_opdata = preg_replace_callback('/\{ITEM\.(?:LAST)?VALUE(\d*)\}/', 
-						function($matches) use ($trig, $db_items) {
+						function($matches) use ($trig, $db_items, $formatItem) {
 							$index = (int)($matches[1] === '' ? 1 : $matches[1]);
 							$func_index = $index - 1; 
 							
 							if (isset($trig['functions'][$func_index])) {
 								$itemid = $trig['functions'][$func_index]['itemid'];
 								if (isset($db_items[$itemid])) {
-									$item = $db_items[$itemid];
-									
-									// Adapta estrutura do ValueMap para o formatHistoryValue
-									// A API retorna ['valuemap']['mappings'] => [...], mas o helper espera $item['valuemap'] => [...]
-									if (isset($item['valuemap']['mappings'])) {
-										$item['valuemap'] = $item['valuemap']['mappings'];
-									} else {
-										$item['valuemap'] = [];
-									}
-
-									return formatHistoryValue($item['lastvalue'], $item);
+									return $formatItem($db_items[$itemid]);
 								}
 							}
 							return $matches[0];
@@ -159,28 +178,17 @@ class WidgetView extends CControllerDashboardWidgetView {
 						$resolved_opdata
 					);
 				}
-				// CENÁRIO 2: OpData Vazio (Fallback Automático)
+				// CENÁRIO 2: OpData Vazio
 				else if (empty($resolved_opdata) && !empty($trig['functions'])) {
 					$opdata_parts = [];
 					foreach ($trig['functions'] as $func) {
 						$itemid = $func['itemid'];
 						if (isset($db_items[$itemid])) {
-							$item = $db_items[$itemid];
-							
-							// Adapta estrutura do ValueMap
-							if (isset($item['valuemap']['mappings'])) {
-								$item['valuemap'] = $item['valuemap']['mappings'];
-							} else {
-								$item['valuemap'] = [];
-							}
-							
-							$formatted_val = formatHistoryValue($item['lastvalue'], $item);
-							
-							// Se só tem 1 item, mostra direto. Se tem mais, mostra "Nome: Valor"
+							$val = $formatItem($db_items[$itemid]);
 							if (count($trig['functions']) == 1) {
-								$opdata_parts[] = $formatted_val;
+								$opdata_parts[] = $val;
 							} else {
-								$opdata_parts[] = $item['name'] . ': ' . $formatted_val;
+								$opdata_parts[] = $db_items[$itemid]['name'] . ': ' . $val;
 							}
 						}
 					}
@@ -252,7 +260,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 7. ORDENAÇÃO
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
