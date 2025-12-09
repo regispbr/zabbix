@@ -55,7 +55,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 // Manual completo
+			'show_opdata' => 0 
 		], $search_limit);
 
 		$triggerIds = [];
@@ -83,7 +83,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. RESOLUÇÃO MANUAL COM DEBUG
+		// 5. RESOLUÇÃO MANUAL
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
@@ -106,30 +106,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// C) Busca Itens COMPLETOS
+			// C) Busca Itens
 			$db_items = [];
 			if (!empty($itemIds)) {
 				$db_items = API::Item()->get([
 					'itemids' => $itemIds,
 					'output' => ['itemid', 'name', 'lastvalue', 'units', 'value_type', 'valuemapid'],
-					'selectValueMap' => ['mappings'], // <--- IMPORTANTE
+					'selectValueMap' => ['mappings'],
 					'preservekeys' => true
 				]);
 			}
-
-			// --- DEBUG: Inspecionar um Item ---
-			if (!empty($db_items)) {
-				$sample_item = reset($db_items);
-				if (isset($sample_item['valuemap'])) {
-					error_log("DEBUG ALARM ITEM STRUCT: ID=" . $sample_item['itemid'] . " | Valuemap Type=" . gettype($sample_item['valuemap']));
-					if (is_array($sample_item['valuemap'])) {
-						error_log("DEBUG ALARM ITEM STRUCT: Valuemap Keys=" . implode(',', array_keys($sample_item['valuemap'])));
-					}
-				} else {
-					error_log("DEBUG ALARM ITEM STRUCT: ID=" . $sample_item['itemid'] . " | Valuemap key MISSING");
-				}
-			}
-			// ----------------------------------
 
 			// D) Processamento
 			foreach ($db_triggers as $tid => $trig) {
@@ -143,28 +129,26 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
-				// Função Local para Formatar com Debug
-				$format_item_value = function($item) use ($tid) {
-					// Preparação do array item para o helper
-					$item_for_helper = $item;
+				// --- FUNÇÃO DE FORMATAÇÃO MANUAL ROBUSTA ---
+				$format_item_value = function($item) {
+					$raw_val = $item['lastvalue'];
 					
-					// Ajuste da estrutura do ValueMap
-					if (isset($item['valuemap']['mappings'])) {
-						$item_for_helper['valuemap'] = $item['valuemap']['mappings'];
-					} else {
-						$item_for_helper['valuemap'] = [];
+					// 1. Tenta ValueMap Manualmente (Prioridade)
+					if (isset($item['valuemap']['mappings']) && is_array($item['valuemap']['mappings'])) {
+						foreach ($item['valuemap']['mappings'] as $map) {
+							// Comparação solta (string vs int)
+							if ($map['value'] == $raw_val) {
+								return $map['newvalue'] . ' (' . $raw_val . ')';
+							}
+						}
 					}
 
-					// Chama o helper nativo
-					$formatted = formatHistoryValue($item['lastvalue'], $item_for_helper);
-
-					// Debug se o valor for "1" e não mudou
-					if ($item['lastvalue'] == '1' && $formatted == '1') {
-						error_log("DEBUG ALARM FORMAT FAIL: Trigger $tid | Item " . $item['itemid'] . " | Raw: 1 | Formatted: 1 (Esperava tradução)");
-						error_log("DEBUG ALARM MAP DUMP: " . json_encode($item_for_helper['valuemap']));
-					}
-
-					return $formatted;
+					// 2. Se não mapeou, formata com unidade (ex: 100 Mbps)
+					// Prepara item fake para o helper não reclamar
+					$item_clean = $item;
+					$item_clean['valuemap'] = []; 
+					
+					return formatHistoryValue($raw_val, $item_clean);
 				};
 
 				$resolved_opdata = $trig['opdata'];
@@ -189,7 +173,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 				// CENÁRIO 2: OpData Vazio (Fallback)
 				else if (empty($resolved_opdata) && !empty($trig['functions'])) {
-					// error_log("DEBUG ALARM FALLBACK: Trigger $tid tem OpData vazio. Tentando fallback.");
 					$opdata_parts = [];
 					foreach ($trig['functions'] as $func) {
 						$itemid = $func['itemid'];
@@ -201,15 +184,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 							} else {
 								$opdata_parts[] = $db_items[$itemid]['name'] . ': ' . $formatted;
 							}
-						} else {
-							error_log("DEBUG ALARM FALLBACK MISSING ITEM: Item $itemid não encontrado para Trigger $tid");
 						}
 					}
 					if (!empty($opdata_parts)) {
 						$opdata_parts = array_unique($opdata_parts);
 						$resolved_opdata = implode(', ', $opdata_parts);
-					} else {
-						// error_log("DEBUG ALARM FALLBACK EMPTY: Falha ao gerar fallback para Trigger $tid");
 					}
 				}
 
