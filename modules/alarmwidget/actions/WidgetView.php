@@ -9,8 +9,11 @@ use CScreenProblem;
 use CSettingsHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
-// Classes para renderização visual
+// Imports visuais do Zabbix
+use CUrl;
+use CLink;
 use CLinkAction;
+use CSpan;
 use CHintBoxHelper;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -59,7 +62,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 
+			'show_opdata' => 2 
 		], $search_limit);
 
 		$triggerIds = [];
@@ -71,7 +74,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. STATUS REAL (Busca r_eventid confiável)
+		// 4. STATUS REAL
 		$problem_details_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -242,44 +245,46 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$age_seconds = time() - $clock;
 				}
 
-				// --- FORMATAÇÃO VISUAL (Convertida para String) ---
+				// --- FORMATAÇÃO VISUAL NATIVA (Time, Status Color, Duration Popup) ---
 
-				// STATUS (Verde ou Vermelho) - Usando classes CSS padrão do Zabbix
-				if ($is_resolved) {
-					// 'green' é a classe CSS para texto verde no Zabbix
-					$status_html = '<span class="green">RESOLVED</span>';
-				} else {
-					// 'red' é a classe CSS para texto vermelho
-					$status_html = '<span class="red">PROBLEM</span>';
-				}
-
-				// TIMELINE / DURATION (Popup)
-				$age_str = $this->formatAge($age_seconds);
-				
-				// Gera o conteúdo do hintbox (timeline) usando o helper nativo
-				$hint_content = CHintBoxHelper::getEventList(
-					$triggerid, 
-					$eventid, 
-					true, // show_timeline
-					false, // show_tags
-					[], 
-					TAG_NAME_FULL, 
-					''
+				// 1. Time (Com Link)
+				$time_obj = new CLink(date('d M Y H:i:s', $clock),
+					(new CUrl('tr_events.php'))
+						->setArgument('triggerid', $triggerid)
+						->setArgument('eventid', $eventid)
 				);
 
-				// Cria o link action e converte para string HTML para não quebrar o frontend
-				$age_link = (new CLinkAction($age_str))->setAjaxHint($hint_content);
-				$age_html = $age_link->toString();
+				// 2. Status (Com Cor Fixa)
+				if ($is_resolved) {
+					// ZBX_STYLE_GREEN é 'green' no CSS do Zabbix
+					$status_obj = (new CSpan('RESOLVED'))->addClass(ZBX_STYLE_GREEN);
+				} else {
+					// ZBX_STYLE_RED ou ZBX_STYLE_PROBLEM_UNACK_FG (usaremos uma classe padrão de erro ou texto normal)
+					$status_obj = (new CSpan('PROBLEM'))->addClass(ZBX_STYLE_RED);
+				}
+
+				// 3. Duration/Age (Com Popup Timeline)
+				$age_str = $this->formatAge($age_seconds);
+				$age_obj = (new CLinkAction($age_str))
+					->setAjaxHint(CHintBoxHelper::getEventList(
+						$triggerid, 
+						$eventid, 
+						true, // show_timeline
+						false, // show_tags (padrão false para não poluir)
+						[], 
+						TAG_NAME_FULL, 
+						''
+					));
 				
 				$problems_final[] = [
 					'eventid' => $eventid,
 					'objectid' => $triggerid,
 					'name' => $name,
 					'severity' => $severity,
-					'status' => $status_html, // HTML String (Verde/Vermelho)
-					'clock' => $clock,
-					'time' => date('d M Y H:i:s', $clock),
-					'age' => $age_html, // HTML String (Com Popup)
+					'status' => $status_obj, // Objeto HTML
+					'clock' => $clock, // Para ordenação
+					'time' => $time_obj, // Objeto HTML com Link
+					'age' => $age_obj, // Objeto HTML com Popup
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
