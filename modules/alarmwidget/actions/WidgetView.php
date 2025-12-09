@@ -9,7 +9,7 @@ use CScreenProblem;
 use CSettingsHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
-// Imports visuais do Zabbix
+// Imports visuais essenciais
 use CUrl;
 use CLink;
 use CLinkAction;
@@ -244,41 +244,35 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$age_seconds = time() - $clock;
 				}
 
-				// --- LINKS E POPUPS (Funcionalidades Novas) ---
-
-				// 1. Time (Link Simples)
+				// --- 1. TIME LINK ---
 				$time_obj = new CLink(date('d M Y H:i:s', $clock),
 					(new CUrl('tr_events.php'))
 						->setArgument('triggerid', $triggerid)
 						->setArgument('eventid', $eventid)
 				);
-				// IMPORTANTE: Converte para string HTML para o JS não se perder
-				$time_html = $time_obj->toString();
 
-				// 2. Age/Duration (Link com Popup de Histórico)
+				// --- 2. DURATION POPUP ---
 				$age_str = $this->formatAge($age_seconds);
 				$age_obj = (new CLinkAction($age_str))
 					->setAjaxHint(CHintBoxHelper::getEventList(
 						$triggerid, 
 						$eventid, 
-						true, // show_timeline
-						false, // show_tags (desligado para limpar)
+						true, 
+						false, 
 						[], 
 						TAG_NAME_FULL, 
 						''
 					));
-				// IMPORTANTE: Converte para string HTML
-				$age_html = $age_obj->toString();
 				
 				$problems_final[] = [
 					'eventid' => $eventid,
 					'objectid' => $triggerid,
 					'name' => $name,
 					'severity' => $severity,
-					'status' => $is_resolved ? 'RESOLVED' : 'PROBLEM', // VOLTA AO PADRÃO STRING
+					'status' => $is_resolved ? 'RESOLVED' : 'PROBLEM', // STRING SIMPLES
 					'clock' => $clock,
-					'time' => $time_html, // HTML STRING
-					'age' => $age_html,   // HTML STRING
+					'time' => $time_obj, // Link
+					'age' => $age_obj, // Link com Popup
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
