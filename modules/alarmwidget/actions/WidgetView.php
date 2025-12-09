@@ -44,6 +44,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. ENGINE CALL
+		// show_opdata = 0 pois faremos o processamento manual completo
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -55,7 +56,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 // Manual completo
+			'show_opdata' => 0 
 		], $search_limit);
 
 		$triggerIds = [];
@@ -83,11 +84,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. RESOLUÇÃO MANUAL DE OPDATA (CORRIGIDA)
+		// 5. RESOLUÇÃO MANUAL DE OPDATA (LÓGICA RELACIONAL)
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
-			// A) Buscar Triggers
+			// A) Buscar Triggers e suas funções
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata', 'expression', 'description'],
@@ -96,7 +97,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'preservekeys' => true
 			]);
 
-			// B) Coleta Item IDs
+			// B) Coleta Item IDs das funções
 			$itemIds = [];
 			foreach ($db_triggers as $trig) {
 				if (!empty($trig['functions'])) {
@@ -123,18 +124,18 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// D) Busca ValueMaps (CORREÇÃO AQUI: selectMappings)
+			// D) Busca ValueMaps Completos (O Segredo do "Down (1)")
 			$db_valuemaps = [];
 			if (!empty($valuemapIds)) {
 				try {
 					$valuemaps_raw = API::ValueMap()->get([
 						'valuemapids' => array_keys($valuemapIds),
 						'output' => ['valuemapid', 'name'],
-						'selectMappings' => ['value', 'newvalue'], // ESSENCIAL PARA EVITAR O ERRO "Undefined index mappings"
+						'selectMappings' => ['value', 'newvalue'], // Traz os mapeamentos reais
 						'preservekeys' => true
 					]);
+					
 					foreach ($valuemaps_raw as $id => $vmap) {
-						// Garante que mappings existe
 						$db_valuemaps[$id] = $vmap['mappings'] ?? [];
 					}
 				} catch (\Exception $e) {
@@ -142,7 +143,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// E) Processamento Final
+			// E) Montagem Inteligente
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -156,7 +157,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 				$resolved_opdata = $trig['opdata'];
 				
-				// CENÁRIO 1: OpData está configurado na Trigger (Tem Macros)
+				// --- CENÁRIO 1: OpData Configurado na Trigger ---
 				if (!empty($resolved_opdata) && !empty($trig['functions'])) {
 					$resolved_opdata = preg_replace_callback('/\{ITEM\.(?:LAST)?VALUE(\d*)\}/', 
 						function($matches) use ($trig, $db_items, $db_valuemaps) {
@@ -168,13 +169,14 @@ class WidgetView extends CControllerDashboardWidgetView {
 								if (isset($db_items[$itemid])) {
 									$item = $db_items[$itemid];
 									
-									// Injeta o ValueMap se existir
+									// Injeta o dicionário de mapeamento no item para a função formatar
 									if ($item['valuemapid'] != 0 && isset($db_valuemaps[$item['valuemapid']])) {
 										$item['valuemap'] = $db_valuemaps[$item['valuemapid']];
 									} else {
 										$item['valuemap'] = [];
 									}
 
+									// Função nativa do Zabbix que gera "Down (1)" ou "100 GB"
 									return formatHistoryValue($item['lastvalue'], $item);
 								}
 							}
@@ -183,7 +185,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 						$resolved_opdata
 					);
 				}
-				// CENÁRIO 2: OpData Vazio (Fallback para lista de itens)
+				// --- CENÁRIO 2: OpData Vazio (Fallback para lista de itens) ---
 				else if (empty($resolved_opdata) && !empty($trig['functions'])) {
 					$opdata_parts = [];
 					foreach ($trig['functions'] as $func) {
@@ -191,6 +193,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 						if (isset($db_items[$itemid])) {
 							$item = $db_items[$itemid];
 							
+							// Injeta o dicionário de mapeamento
 							if ($item['valuemapid'] != 0 && isset($db_valuemaps[$item['valuemapid']])) {
 								$item['valuemap'] = $db_valuemaps[$item['valuemapid']];
 							} else {
@@ -198,9 +201,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 							}
 							
 							$formatted_val = formatHistoryValue($item['lastvalue'], $item);
-							$opdata_parts[] = $item['name'] . ': ' . $formatted_val;
+							// Se a trigger só tem um item, mostra só o valor (ex: "150ms")
+							// Se tem vários, mostra "Nome: Valor" para não confundir
+							if (count($trig['functions']) == 1) {
+								$opdata_parts[] = $formatted_val;
+							} else {
+								$opdata_parts[] = $item['name'] . ': ' . $formatted_val;
+							}
 						}
 					}
+					// Remove duplicatas (ex: se trigger usa avg e last do mesmo item) e junta
 					if (!empty($opdata_parts)) {
 						$opdata_parts = array_unique($opdata_parts);
 						$resolved_opdata = implode(', ', $opdata_parts);
@@ -269,6 +279,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
+		// 7. ORDENAÇÃO
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
