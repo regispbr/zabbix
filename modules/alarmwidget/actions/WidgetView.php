@@ -13,14 +13,14 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// Constantes
+		// --- CONFIGURAÇÕES BÁSICAS ---
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
 		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
 
-		// 1. Inputs
+		// 1. INPUTS
 		$groupids = $this->fields_values['groupids'] ?? [];
 		$hostids = $this->fields_values['hostids'] ?? [];
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
@@ -37,14 +37,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 
-		// 2. Filtros
+		// 2. ENGINE CALL
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
 		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK;
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
-		// 3. Engine Call
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -68,7 +67,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. Status Real
+		// 3. EVENT STATUS MAP
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -84,66 +83,76 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Trigger + OpData
+		// 4. TRIGGER + MACRO DEBUG
 		$trigger_info_map = [];
 		$resolved_opdata = [];
 
 		if (!empty($triggerIds)) {
-			// Busca COMPLETA para satisfazer o CMacrosResolverHelper
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => API_OUTPUT_EXTEND, 
+				'output' => 'extend', 
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
 				'selectFunctions' => 'extend',
 				'preservekeys' => true
 			]);
 
-			// --- SANITIZAÇÃO E PREPARAÇÃO PARA O RESOLVER ---
-			$triggers_clean = [];
-			foreach ($db_triggers as $tid => $trig) {
-				// Garante que é um array
-				if (!is_array($trig)) continue;
+			$triggers_to_resolve = [];
+			foreach ($data['problems'] as $problem) {
+				$triggerid = $problem['objectid'];
+				if (!isset($db_triggers[$triggerid])) continue;
+				$trigger = $db_triggers[$triggerid];
 
-				// Garante campos obrigatórios como strings
-				$t = $trig;
-				$t['triggerid'] = (string)$tid; // Força ID
-				$t['expression'] = isset($trig['expression']) ? (string)$trig['expression'] : '';
-				$t['recovery_expression'] = isset($trig['recovery_expression']) ? (string)$trig['recovery_expression'] : '';
-				$t['opdata'] = isset($trig['opdata']) ? (string)$trig['opdata'] : '';
+				// Sanitização básica para debug
+				$expression = $trigger['expression'] ?? '';
+				$opdata_raw = $trigger['opdata'] ?? '';
 				
-				// Se expression for vazia, o resolver pode chiar, mas string vazia é melhor que null
-				if ($t['expression'] === '') {
-					// Trigger inválida ou corrompida, não adianta tentar resolver
-					// error_log("Skipping trigger $tid due to empty expression");
-				} else {
-					$triggers_clean[$tid] = $t;
+				if (!isset($triggers_to_resolve[$triggerid])) {
+					$triggers_to_resolve[$triggerid] = $trigger;
+					// Força string vazia se null para evitar fatal error
+					if (is_null($triggers_to_resolve[$triggerid]['expression'])) $triggers_to_resolve[$triggerid]['expression'] = '';
+					if (is_null($triggers_to_resolve[$triggerid]['recovery_expression'])) $triggers_to_resolve[$triggerid]['recovery_expression'] = '';
 				}
 			}
 
-			// Mapear eventos
 			$problems_for_macros = [];
 			foreach ($data['problems'] as $p) {
-				if (isset($triggers_clean[$p['objectid']])) {
+				if (isset($triggers_to_resolve[$p['objectid']])) {
 					$problems_for_macros[$p['eventid']] = $p;
 				}
 			}
 
-			if (!empty($triggers_clean) && !empty($problems_for_macros)) {
-				try {
+			// --- ÁREA DE DEBUG CRÍTICA ---
+			// Vamos dump-ar a estrutura do primeiro item que passamos para o resolver
+			if (!empty($triggers_to_resolve)) {
+				$first_tid = array_key_first($triggers_to_resolve);
+				$first_trig = $triggers_to_resolve[$first_tid];
+				
+				error_log("--- DEBUG START ---");
+				error_log("TRIGGER KEYS: " . implode(', ', array_keys($first_trig)));
+				error_log("TRIGGER ID inside array: " . ($first_trig['triggerid'] ?? 'MISSING'));
+				error_log("EXPRESSION Type: " . gettype($first_trig['expression']));
+				
+				// Verifica se é array de arrays ou array de objetos
+				error_log("IS ARRAY OF ARRAYS? " . (is_array($first_trig) ? "YES" : "NO"));
+				error_log("--- DEBUG END ---");
+			}
+			// -----------------------------
+
+			try {
+				if (!empty($triggers_to_resolve)) {
 					$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
-						$triggers_clean,
+						$triggers_to_resolve,
 						[
 							'events' => $problems_for_macros,
 							'html' => false
 						]
 					);
-				} catch (\Throwable $e) {
-					// error_log("ALARM WIDGET RESOLVER ERROR: " . $e->getMessage());
-					$resolved_opdata = [];
 				}
+			} catch (\Throwable $e) {
+				error_log("DEBUG ALARM: CRASH NO RESOLVER: " . $e->getMessage());
+				$resolved_opdata = [];
 			}
 
-			// Prepara mapa de hosts (usa db_triggers original para não perder triggers sem expressão)
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -161,7 +170,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 6. Construção Final
+		// 5. CONSTRUÇÃO FINAL
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -193,7 +202,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
-				// Prioriza OpData resolvido
 				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
 
 				$age_seconds = time() - $clock;
@@ -217,7 +225,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 7. Ordenação
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
