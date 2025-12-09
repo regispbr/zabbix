@@ -49,7 +49,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. Engine Call
-		// show_opdata => 1 (Separately) ou 2 (With name). Tente 1 para ver se vem limpo.
+		// show_opdata => 1 (Separately). Vamos ver o que vem.
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -63,6 +63,22 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'acknowledgement_status' => $ack_status,
 			'show_opdata' => 1 
 		], $search_limit);
+
+		// --- DEBUG: Inspecionar retorno da Engine ---
+		if (!empty($data['problems'])) {
+			$first = reset($data['problems']);
+			// Loga as chaves disponíveis no primeiro problema
+			error_log("DEBUG ALARM OPDATA: Chaves no problema[0]: " . implode(', ', array_keys($first)));
+			// Loga o valor de opdata se existir
+			if (array_key_exists('opdata', $first)) {
+				error_log("DEBUG ALARM OPDATA: Valor de 'opdata' no problema[0]: '" . $first['opdata'] . "'");
+			} else {
+				error_log("DEBUG ALARM OPDATA: Chave 'opdata' NÃO encontrada no problema[0].");
+			}
+		} else {
+			// error_log("DEBUG ALARM OPDATA: Nenhum problema retornado pela engine.");
+		}
+		// --------------------------------------------
 
 		$triggerIds = [];
 		$eventIds = [];
@@ -89,7 +105,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Dados do Host (Sem Trigger API pesada)
+		// 5. Dados do Host (Sem Trigger API pesada por enquanto)
 		$trigger_info_map = [];
 		if (!empty($triggerIds)) {
 			$db_triggers = API::Trigger()->get([
@@ -146,7 +162,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 
 				// TENTA PEGAR OPDATA DA ENGINE
-				// A CScreenProblem::getData deve popular isso se show_opdata > 0
 				$opdata_final = $problem['opdata'] ?? ''; 
 
 				$age_seconds = time() - $clock;
