@@ -13,7 +13,6 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 use CUrl;
 use CLink;
 use CLinkAction;
-use CSpan;
 use CHintBoxHelper;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -245,46 +244,41 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$age_seconds = time() - $clock;
 				}
 
-				// --- FORMATAÇÃO VISUAL NATIVA (Time, Status Color, Duration Popup) ---
+				// --- LINKS E POPUPS (Funcionalidades Novas) ---
 
-				// 1. Time (Com Link)
+				// 1. Time (Link Simples)
 				$time_obj = new CLink(date('d M Y H:i:s', $clock),
 					(new CUrl('tr_events.php'))
 						->setArgument('triggerid', $triggerid)
 						->setArgument('eventid', $eventid)
 				);
+				// IMPORTANTE: Converte para string HTML para o JS não se perder
+				$time_html = $time_obj->toString();
 
-				// 2. Status (Com Cor Fixa)
-				if ($is_resolved) {
-					// ZBX_STYLE_GREEN é 'green' no CSS do Zabbix
-					$status_obj = (new CSpan('RESOLVED'))->addClass(ZBX_STYLE_GREEN);
-				} else {
-					// ZBX_STYLE_RED ou ZBX_STYLE_PROBLEM_UNACK_FG (usaremos uma classe padrão de erro ou texto normal)
-					$status_obj = (new CSpan('PROBLEM'))->addClass(ZBX_STYLE_RED);
-				}
-
-				// 3. Duration/Age (Com Popup Timeline)
+				// 2. Age/Duration (Link com Popup de Histórico)
 				$age_str = $this->formatAge($age_seconds);
 				$age_obj = (new CLinkAction($age_str))
 					->setAjaxHint(CHintBoxHelper::getEventList(
 						$triggerid, 
 						$eventid, 
 						true, // show_timeline
-						false, // show_tags (padrão false para não poluir)
+						false, // show_tags (desligado para limpar)
 						[], 
 						TAG_NAME_FULL, 
 						''
 					));
+				// IMPORTANTE: Converte para string HTML
+				$age_html = $age_obj->toString();
 				
 				$problems_final[] = [
 					'eventid' => $eventid,
 					'objectid' => $triggerid,
 					'name' => $name,
 					'severity' => $severity,
-					'status' => $status_obj, // Objeto HTML
-					'clock' => $clock, // Para ordenação
-					'time' => $time_obj, // Objeto HTML com Link
-					'age' => $age_obj, // Objeto HTML com Popup
+					'status' => $is_resolved ? 'RESOLVED' : 'PROBLEM', // VOLTA AO PADRÃO STRING
+					'clock' => $clock,
+					'time' => $time_html, // HTML STRING
+					'age' => $age_html,   // HTML STRING
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
