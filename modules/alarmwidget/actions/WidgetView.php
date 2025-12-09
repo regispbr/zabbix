@@ -110,7 +110,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'itemids' => $itemIds,
 					'output' => ['itemid', 'name', 'lastvalue', 'units', 'value_type', 'valuemapid'],
 					'selectValueMap' => ['mappings'],
-					'webitems' => true, // <--- CRUCIAL PARA O "High Response Time"
+					'webitems' => true,
 					'preservekeys' => true
 				]);
 			}
@@ -130,7 +130,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$format_item_value = function($item) {
 					$raw_val = $item['lastvalue'];
 					
-					// 1. ValueMap Manual
 					if (isset($item['valuemap']['mappings']) && is_array($item['valuemap']['mappings'])) {
 						foreach ($item['valuemap']['mappings'] as $map) {
 							if ($map['value'] == $raw_val) {
@@ -139,7 +138,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 						}
 					}
 
-					// 2. Formatação Nativa
 					$item_clean = $item;
 					$item_clean['valuemap'] = []; 
 					return formatHistoryValue($raw_val, $item_clean);
@@ -216,11 +214,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$r_clock = isset($problem['r_clock']) ? (int)$problem['r_clock'] : 0;
 				$is_resolved = ($r_eventid != 0) || ($r_clock != 0);
 
-				// --- LOG SEM FILTRO (Agora pega tudo) ---
-				// Loga apenas se tiver recuperação para não poluir demais, ou loga tudo se quiser ver
-				if ($is_resolved) {
-					error_log("DEBUG STATUS: EVENT=$eventid | R_EVENTID=$r_eventid | R_CLOCK=$r_clock | STATUS=RESOLVED");
-				}
+				// --- LOG TOTAL IRRESTRITO ---
+				error_log("DEBUG STATUS: EVENT=$eventid | R_EID=$r_eventid | R_CLOCK=$r_clock | NAME='" . substr($problem['name'], 0, 20) . "...'");
 
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
 					if (!$is_resolved) continue; 
@@ -259,6 +254,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
+		// 7. ORDENAÇÃO
 		$sort_by_map = [
 			WidgetForm::SORT_BY_TIME => 'clock',
 			WidgetForm::SORT_BY_SEVERITY => 'severity',
