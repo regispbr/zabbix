@@ -55,20 +55,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 2 
+			'show_opdata' => 0 
 		], $search_limit);
-
-		// --- DEBUG ESTRUTURA DATA ---
-		error_log("DEBUG ALARM DATA KEYS: " . implode(', ', array_keys($data)));
-		if (isset($data['problems'])) {
-			error_log("DEBUG ALARM PROBLEMS COUNT: " . count($data['problems']));
-			// Pega o primeiro e o último para ver chaves
-			if (!empty($data['problems'])) {
-				$first = reset($data['problems']);
-				error_log("DEBUG ALARM FIRST PROBLEM KEYS: " . implode(', ', array_keys($first)));
-			}
-		}
-		// ----------------------------
 
 		$triggerIds = [];
 		$eventIds = [];
@@ -79,23 +67,28 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. STATUS REAL
-		$event_status_map = [];
+		// 4. STATUS REAL (O PULO DO GATO)
+		// Buscamos r_eventid e r_clock explicitamente aqui, pois a engine falhou em entregar
+		$problem_details_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
 				'eventids' => $eventIds,
-				'output' => ['eventid', 'suppressed', 'acknowledged'],
+				'output' => ['eventid', 'r_eventid', 'r_clock', 'suppressed', 'acknowledged'], // Pedimos tudo
+				'recent' => true, // Importante para pegar os recém resolvidos
 				'preservekeys' => true
 			]);
+			
 			foreach ($db_problems as $eid => $prob) {
-				$event_status_map[$eid] = [
+				$problem_details_map[$eid] = [
 					'sup' => (int)$prob['suppressed'],
-					'ack' => (int)$prob['acknowledged']
+					'ack' => (int)$prob['acknowledged'],
+					'r_eventid' => (int)$prob['r_eventid'],
+					'r_clock' => (int)$prob['r_clock']
 				];
 			}
 		}
 
-		// 5. RESOLUÇÃO MANUAL
+		// 5. RESOLUÇÃO MANUAL DE OPDATA
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
@@ -122,7 +115,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'itemids' => $itemIds,
 					'output' => ['itemid', 'name', 'lastvalue', 'units', 'value_type', 'valuemapid'],
 					'selectValueMap' => ['mappings'],
-					'webitems' => true,
+					'webitems' => true, 
 					'preservekeys' => true
 				]);
 			}
@@ -208,9 +201,15 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
-				$status_info = $event_status_map[$eventid] ?? ['sup' => 0, 'ack' => 0];
-				$p_sup = $status_info['sup'];
-				$p_ack = $status_info['ack'];
+				// BUSCA DETALHES CONFIÁVEIS DO MAPA CRIADO NO PASSO 4
+				$details = $problem_details_map[$eventid] ?? [
+					'sup' => 0, 'ack' => 0, 'r_eventid' => 0, 'r_clock' => 0
+				];
+
+				$p_sup = $details['sup'];
+				$p_ack = $details['ack'];
+				$r_eventid = $details['r_eventid'];
+				$r_clock = $details['r_clock'];
 
 				if ($show_suppressed_only == 1 && $p_sup == 0) continue; 
 
@@ -221,9 +220,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// --- LÓGICA DE STATUS ---
-				$r_eventid = isset($problem['r_eventid']) ? (int)$problem['r_eventid'] : 0;
-				$r_clock = isset($problem['r_clock']) ? (int)$problem['r_clock'] : 0;
+				// DECISÃO DE STATUS FINAL
 				$is_resolved = ($r_eventid != 0) || ($r_clock != 0);
 
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
