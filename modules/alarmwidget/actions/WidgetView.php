@@ -245,50 +245,46 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$age_seconds = time() - $clock;
 				}
 
-				// --- FORMATAÇÃO VISUAL (Convertida para String HTML para evitar quebra) ---
+				// --- FORMATAÇÃO VISUAL NATIVA (Time, Status Color, Duration Popup) ---
 
-				// 1. Time (HTML String)
+				// 1. Time (Com Link)
 				$time_obj = new CLink(date('d M Y H:i:s', $clock),
 					(new CUrl('tr_events.php'))
 						->setArgument('triggerid', $triggerid)
 						->setArgument('eventid', $eventid)
 				);
-				// CRUCIAL: Converter para string
-				$time_html = $time_obj->toString();
 
-				// 2. Status (HTML String com cor)
+				// 2. Status (Com Cor Fixa)
 				if ($is_resolved) {
+					// ZBX_STYLE_GREEN é 'green' no CSS do Zabbix
 					$status_obj = (new CSpan('RESOLVED'))->addClass(ZBX_STYLE_GREEN);
 				} else {
+					// ZBX_STYLE_RED ou ZBX_STYLE_PROBLEM_UNACK_FG (usaremos uma classe padrão de erro ou texto normal)
 					$status_obj = (new CSpan('PROBLEM'))->addClass(ZBX_STYLE_RED);
 				}
-				// CRUCIAL: Converter para string
-				$status_html = $status_obj->toString();
 
-				// 3. Age (HTML String com Popup)
+				// 3. Duration/Age (Com Popup Timeline)
 				$age_str = $this->formatAge($age_seconds);
 				$age_obj = (new CLinkAction($age_str))
 					->setAjaxHint(CHintBoxHelper::getEventList(
 						$triggerid, 
 						$eventid, 
-						true, 
-						false, 
+						true, // show_timeline
+						false, // show_tags (padrão false para não poluir)
 						[], 
 						TAG_NAME_FULL, 
 						''
 					));
-				// CRUCIAL: Converter para string
-				$age_html = $age_obj->toString();
 				
 				$problems_final[] = [
 					'eventid' => $eventid,
 					'objectid' => $triggerid,
 					'name' => $name,
 					'severity' => $severity,
-					'status' => $status_html, // Agora é uma string HTML válida
-					'clock' => $clock,
-					'time' => $time_html, // Agora é uma string HTML válida
-					'age' => $age_html, // Agora é uma string HTML válida
+					'status' => $status_obj, // Objeto HTML
+					'clock' => $clock, // Para ordenação
+					'time' => $time_obj, // Objeto HTML com Link
+					'age' => $age_obj, // Objeto HTML com Popup
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
