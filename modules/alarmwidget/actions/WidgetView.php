@@ -13,14 +13,14 @@ use Modules\AlarmWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
-		// --- CONFIGURAÇÕES BÁSICAS ---
+		// Constantes
 		if (!defined('ZBX_PROBLEM_SUPPRESSED')) define('ZBX_PROBLEM_SUPPRESSED', 1);
 		if (!defined('ZBX_ACK_STATUS_ALL')) define('ZBX_ACK_STATUS_ALL', 1);
 		if (!defined('ZBX_ACK_STATUS_UNACK')) define('ZBX_ACK_STATUS_UNACK', 2);
 		if (!defined('TRIGGERS_OPTION_RECENT_PROBLEM')) define('TRIGGERS_OPTION_RECENT_PROBLEM', 1);
 		if (!defined('TRIGGERS_OPTION_ALL')) define('TRIGGERS_OPTION_ALL', 2);
 
-		// 1. INPUTS
+		// 1. Inputs
 		$groupids = $this->fields_values['groupids'] ?? [];
 		$hostids = $this->fields_values['hostids'] ?? [];
 		$exclude_hostids = $this->fields_values['exclude_hostids'] ?? [];
@@ -28,22 +28,25 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
+		
 		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
+		
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
 		$show_suppressed_only = $this->fields_values['show_suppressed_only'] ?? 0;
 		$engine_show_suppressed = ($show_suppressed == 1 || $show_suppressed_only == 1);
 		$sort_by_int = (int)($this->fields_values['sort_by'] ?? WidgetForm::SORT_BY_TIME);
 		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 
-		// 2. ENGINE CALL
+		// 2. Filtros
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
 		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK;
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
+		// 3. Engine Call
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -67,7 +70,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 3. EVENT STATUS MAP
+		// 4. Status Real
 		$event_status_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
@@ -83,7 +86,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. TRIGGER + MACRO DEBUG
+		// 5. Trigger + OpData
 		$trigger_info_map = [];
 		$resolved_opdata = [];
 
@@ -96,23 +99,40 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'preservekeys' => true
 			]);
 
+			// Prepara array de triggers para resolução
 			$triggers_to_resolve = [];
 			foreach ($data['problems'] as $problem) {
 				$triggerid = $problem['objectid'];
 				if (!isset($db_triggers[$triggerid])) continue;
-				$trigger = $db_triggers[$triggerid];
-
-				// Sanitização básica para debug
-				$expression = $trigger['expression'] ?? '';
-				$opdata_raw = $trigger['opdata'] ?? '';
 				
+				// Apenas adiciona se ainda não estiver na lista (evita duplicidade desnecessária, embora o helper aceite)
 				if (!isset($triggers_to_resolve[$triggerid])) {
-					$triggers_to_resolve[$triggerid] = $trigger;
-					// Força string vazia se null para evitar fatal error
-					if (is_null($triggers_to_resolve[$triggerid]['expression'])) $triggers_to_resolve[$triggerid]['expression'] = '';
-					if (is_null($triggers_to_resolve[$triggerid]['recovery_expression'])) $triggers_to_resolve[$triggerid]['recovery_expression'] = '';
+					$triggers_to_resolve[$triggerid] = $db_triggers[$triggerid];
 				}
 			}
+
+			// --- HIGIENIZAÇÃO CRÍTICA (CORREÇÃO DO FATAL ERROR) ---
+			// Percorre TODAS as triggers que serão enviadas e força a existência das chaves
+			foreach ($triggers_to_resolve as &$t) {
+				// Garante triggerid
+				if (!isset($t['triggerid']) || $t['triggerid'] === null) {
+					$t['triggerid'] = '0'; 
+				}
+				// Garante expression (Corrige: Argument #1 must be string, null given)
+				if (!isset($t['expression']) || is_null($t['expression'])) {
+					$t['expression'] = '';
+				}
+				// Garante recovery_expression
+				if (!isset($t['recovery_expression']) || is_null($t['recovery_expression'])) {
+					$t['recovery_expression'] = '';
+				}
+				// Garante opdata
+				if (!isset($t['opdata']) || is_null($t['opdata'])) {
+					$t['opdata'] = '';
+				}
+			}
+			unset($t); // Quebra a referência
+			// -----------------------------------------------------
 
 			$problems_for_macros = [];
 			foreach ($data['problems'] as $p) {
@@ -121,25 +141,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// --- ÁREA DE DEBUG CRÍTICA ---
-			// Vamos dump-ar a estrutura do primeiro item que passamos para o resolver
-			if (!empty($triggers_to_resolve)) {
-				$first_tid = array_key_first($triggers_to_resolve);
-				$first_trig = $triggers_to_resolve[$first_tid];
-				
-				error_log("--- DEBUG START ---");
-				error_log("TRIGGER KEYS: " . implode(', ', array_keys($first_trig)));
-				error_log("TRIGGER ID inside array: " . ($first_trig['triggerid'] ?? 'MISSING'));
-				error_log("EXPRESSION Type: " . gettype($first_trig['expression']));
-				
-				// Verifica se é array de arrays ou array de objetos
-				error_log("IS ARRAY OF ARRAYS? " . (is_array($first_trig) ? "YES" : "NO"));
-				error_log("--- DEBUG END ---");
-			}
-			// -----------------------------
-
 			try {
-				if (!empty($triggers_to_resolve)) {
+				if (!empty($triggers_to_resolve) && !empty($problems_for_macros)) {
 					$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
 						$triggers_to_resolve,
 						[
@@ -149,7 +152,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					);
 				}
 			} catch (\Throwable $e) {
-				error_log("DEBUG ALARM: CRASH NO RESOLVER: " . $e->getMessage());
+				// error_log("ALARM WIDGET FINAL CATCH: " . $e->getMessage());
 				$resolved_opdata = [];
 			}
 
@@ -170,7 +173,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. CONSTRUÇÃO FINAL
+		// 6. Construção Final
 		$problems_final = [];
 
 		if (!empty($data['problems'])) {
@@ -202,6 +205,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					if ($r_eventid != 0) continue; 
 				}
 
+				// Prioriza OpData resolvido
 				$opdata_final = $resolved_opdata[$eventid] ?? $info['raw_opdata'];
 
 				$age_seconds = time() - $clock;
