@@ -55,7 +55,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 
+			'show_opdata' => 0 // Manual completo
 		], $search_limit);
 
 		$triggerIds = [];
@@ -83,11 +83,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. RESOLUÇÃO MANUAL DE OPDATA
+		// 5. RESOLUÇÃO MANUAL DE OPDATA (CORRIGIDA)
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
-			// A) Triggers
+			// A) Buscar Triggers
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata', 'expression', 'description'],
@@ -96,7 +96,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'preservekeys' => true
 			]);
 
-			// B) Item IDs
+			// B) Coleta Item IDs
 			$itemIds = [];
 			foreach ($db_triggers as $trig) {
 				if (!empty($trig['functions'])) {
@@ -106,7 +106,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// C) Itens + ValuemapID
+			// C) Busca Itens + ValueMapID
 			$db_items = [];
 			$valuemapIds = [];
 			if (!empty($itemIds)) {
@@ -123,25 +123,26 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// D) ValueMaps (Correção: output extendido)
+			// D) Busca ValueMaps (CORREÇÃO AQUI: selectMappings)
 			$db_valuemaps = [];
 			if (!empty($valuemapIds)) {
 				try {
 					$valuemaps_raw = API::ValueMap()->get([
 						'valuemapids' => array_keys($valuemapIds),
-						'output' => 'extend', // GARANTE QUE FUNCIONE
+						'output' => ['valuemapid', 'name'],
+						'selectMappings' => ['value', 'newvalue'], // ESSENCIAL PARA EVITAR O ERRO "Undefined index mappings"
 						'preservekeys' => true
 					]);
 					foreach ($valuemaps_raw as $id => $vmap) {
-						$db_valuemaps[$id] = $vmap['mappings'];
+						// Garante que mappings existe
+						$db_valuemaps[$id] = $vmap['mappings'] ?? [];
 					}
 				} catch (\Exception $e) {
-					// Se falhar, segue sem mapeamento
 					$db_valuemaps = [];
 				}
 			}
 
-			// E) Processamento
+			// E) Processamento Final
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
 				if (!empty($trig['hosts'])) {
@@ -155,7 +156,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 				$resolved_opdata = $trig['opdata'];
 				
-				// CENÁRIO 1: OpData configurado
+				// CENÁRIO 1: OpData está configurado na Trigger (Tem Macros)
 				if (!empty($resolved_opdata) && !empty($trig['functions'])) {
 					$resolved_opdata = preg_replace_callback('/\{ITEM\.(?:LAST)?VALUE(\d*)\}/', 
 						function($matches) use ($trig, $db_items, $db_valuemaps) {
@@ -167,7 +168,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 								if (isset($db_items[$itemid])) {
 									$item = $db_items[$itemid];
 									
-									// Mapeamento
+									// Injeta o ValueMap se existir
 									if ($item['valuemapid'] != 0 && isset($db_valuemaps[$item['valuemapid']])) {
 										$item['valuemap'] = $db_valuemaps[$item['valuemapid']];
 									} else {
@@ -182,7 +183,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 						$resolved_opdata
 					);
 				}
-				// CENÁRIO 2: OpData Vazio (Fallback)
+				// CENÁRIO 2: OpData Vazio (Fallback para lista de itens)
 				else if (empty($resolved_opdata) && !empty($trig['functions'])) {
 					$opdata_parts = [];
 					foreach ($trig['functions'] as $func) {
@@ -197,11 +198,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 							}
 							
 							$formatted_val = formatHistoryValue($item['lastvalue'], $item);
-							// Mostra "Nome: Valor" para contexto
 							$opdata_parts[] = $item['name'] . ': ' . $formatted_val;
 						}
 					}
-					// Remove duplicatas e junta
 					if (!empty($opdata_parts)) {
 						$opdata_parts = array_unique($opdata_parts);
 						$resolved_opdata = implode(', ', $opdata_parts);
