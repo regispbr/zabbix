@@ -58,6 +58,18 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_opdata' => 2 
 		], $search_limit);
 
+		// --- DEBUG ESTRUTURA DATA ---
+		error_log("DEBUG ALARM DATA KEYS: " . implode(', ', array_keys($data)));
+		if (isset($data['problems'])) {
+			error_log("DEBUG ALARM PROBLEMS COUNT: " . count($data['problems']));
+			// Pega o primeiro e o último para ver chaves
+			if (!empty($data['problems'])) {
+				$first = reset($data['problems']);
+				error_log("DEBUG ALARM FIRST PROBLEM KEYS: " . implode(', ', array_keys($first)));
+			}
+		}
+		// ----------------------------
+
 		$triggerIds = [];
 		$eventIds = [];
 		if (!empty($data['problems'])) {
@@ -213,9 +225,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$r_eventid = isset($problem['r_eventid']) ? (int)$problem['r_eventid'] : 0;
 				$r_clock = isset($problem['r_clock']) ? (int)$problem['r_clock'] : 0;
 				$is_resolved = ($r_eventid != 0) || ($r_clock != 0);
-
-				// --- LOG TOTAL IRRESTRITO ---
-				error_log("DEBUG STATUS: EVENT=$eventid | R_EID=$r_eventid | R_CLOCK=$r_clock | NAME='" . substr($problem['name'], 0, 20) . "...'");
 
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
 					if (!$is_resolved) continue; 
