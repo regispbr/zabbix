@@ -27,7 +27,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$exclude_maintenance = $this->fields_values['exclude_maintenance'] ?? 0;
 		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
 		$tags = $this->fields_values['tags'] ?? [];
-		$problem_status_input = $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM;
+		
+		// REMOVIDO O INPUT QUE FORÇAVA APENAS "PROBLEM"
+		// $problem_status_input = ... 
+		
 		$show_ack = $this->fields_values['show_ack'] ?? 0;
 		$show_lines = $this->fields_values['show_lines'] ?? 25;
 		$show_suppressed = $this->fields_values['show_suppressed'] ?? 0;
@@ -37,10 +40,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 
 		// 2. FILTROS
+		// Forçamos RECENT_PROBLEM para ver ativos + resolvidos recentemente
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
+		
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
 		elseif ($show_ack == 2) $ack_status = ZBX_ACK_STATUS_ACK;
+		
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. ENGINE CALL
@@ -55,7 +61,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 
+			'show_opdata' => 0 // Manual
 		], $search_limit);
 
 		$triggerIds = [];
@@ -75,6 +81,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'output' => ['eventid', 'suppressed', 'acknowledged'],
 				'preservekeys' => true
 			]);
+			// Se não achar em Problem (porque já foi resolvido e arquivado), tenta Event?
+			// Para RECENT_PROBLEM, a engine já traz o status básico.
+			
 			foreach ($db_problems as $eid => $prob) {
 				$event_status_map[$eid] = [
 					'sup' => (int)$prob['suppressed'],
@@ -87,7 +96,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
-			// A) Buscar Triggers
+			// A) Triggers
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata', 'expression', 'description'],
@@ -96,7 +105,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'preservekeys' => true
 			]);
 
-			// B) Coleta Item IDs
+			// B) Item IDs
 			$itemIds = [];
 			foreach ($db_triggers as $trig) {
 				if (!empty($trig['functions'])) {
@@ -106,7 +115,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// C) Busca Itens
+			// C) Itens + ValueMap
 			$db_items = [];
 			if (!empty($itemIds)) {
 				$db_items = API::Item()->get([
@@ -129,31 +138,27 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
-				// --- FUNÇÃO DE FORMATAÇÃO MANUAL ROBUSTA ---
+				// Formatação Manual
 				$format_item_value = function($item) {
 					$raw_val = $item['lastvalue'];
 					
-					// 1. Tenta ValueMap Manualmente (Prioridade)
+					// 1. Tenta ValueMap
 					if (isset($item['valuemap']['mappings']) && is_array($item['valuemap']['mappings'])) {
 						foreach ($item['valuemap']['mappings'] as $map) {
-							// Comparação solta (string vs int)
 							if ($map['value'] == $raw_val) {
 								return $map['newvalue'] . ' (' . $raw_val . ')';
 							}
 						}
 					}
 
-					// 2. Se não mapeou, formata com unidade (ex: 100 Mbps)
-					// Prepara item fake para o helper não reclamar
+					// 2. Fallback Formatação
 					$item_clean = $item;
 					$item_clean['valuemap'] = []; 
-					
 					return formatHistoryValue($raw_val, $item_clean);
 				};
 
 				$resolved_opdata = $trig['opdata'];
 				
-				// CENÁRIO 1: OpData Configurado
 				if (!empty($resolved_opdata) && !empty($trig['functions'])) {
 					$resolved_opdata = preg_replace_callback('/\{ITEM\.(?:LAST)?VALUE(\d*)\}/', 
 						function($matches) use ($trig, $db_items, $format_item_value) {
@@ -171,14 +176,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 						$resolved_opdata
 					);
 				}
-				// CENÁRIO 2: OpData Vazio (Fallback)
 				else if (empty($resolved_opdata) && !empty($trig['functions'])) {
 					$opdata_parts = [];
 					foreach ($trig['functions'] as $func) {
 						$itemid = $func['itemid'];
 						if (isset($db_items[$itemid])) {
 							$formatted = $format_item_value($db_items[$itemid]);
-							
 							if (count($trig['functions']) == 1) {
 								$opdata_parts[] = $formatted;
 							} else {
@@ -221,15 +224,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
 				$r_eventid = $problem['r_eventid'] ?? 0;
+				
+				// *** CORREÇÃO: REMOVIDO O FILTRO QUE ESCONDIA RESOLVIDOS ***
+				// A engine já traz o que precisamos. Confiamos no $data da Engine.
+
 				$clock = $problem['clock'] ?? time();
 				$severity = (int)($problem['severity'] ?? 0);
 				$name = $problem['name'] ?? _('Unknown problem');
-
-				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-					if ($r_eventid == 0) continue; 
-				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
-					if ($r_eventid != 0) continue; 
-				}
 
 				$opdata_final = $info['opdata']; 
 
@@ -240,7 +241,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'objectid' => $triggerid,
 					'name' => $name,
 					'severity' => $severity,
-					'status' => ($r_eventid != 0) ? 'RESOLVED' : 'PROBLEM',
+					'status' => ($r_eventid != 0) ? 'RESOLVED' : 'PROBLEM', // Define o status textual
 					'clock' => $clock,
 					'time' => date('d M Y H:i:s', $clock),
 					'age' => $this->formatAge($age_seconds),
