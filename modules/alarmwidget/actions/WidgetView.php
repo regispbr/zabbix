@@ -7,6 +7,7 @@ use CControllerDashboardWidgetView;
 use CControllerResponseData;
 use CScreenProblem;
 use CSettingsHelper;
+use CMacrosResolverHelper; // Importante para resolver OpData
 use Modules\AlarmWidget\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
@@ -55,11 +56,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$show_columns = ['host', 'severity', 'status', 'problem', 'operational_data', 'ack', 'age', 'time'];
 		}
 
-		// 2. Mapeamento de Filtros
+		// 2. Mapeamento de Filtros (Performance: Usar RECENT_PROBLEM para All/Problem)
 		$show_mode = TRIGGERS_OPTION_RECENT_PROBLEM; 
-		if ($problem_status_input == WidgetForm::PROBLEM_STATUS_ALL || $problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
-			$show_mode = TRIGGERS_OPTION_ALL; 
-		} 
+		// O modo ALL (Histórico) só seria usado se quiséssemos auditoria profunda, o que causa lentidão.
+		// Para "ver o que está na aba Problems", RECENT_PROBLEM é o correto.
 
 		$ack_status = ZBX_ACK_STATUS_ALL;
 		if ($show_ack == 1) $ack_status = ZBX_ACK_STATUS_UNACK;
@@ -68,6 +68,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
 
 		// 3. Chamada à Engine Nativa
+		// show_opdata = 2 (Opdata with problem name) ou 1 (Separately). 
+		// Isso instrui a engine a buscar dados para popular o opdata, mas a expansão real faremos manualmente para garantir.
 		$data = CScreenProblem::getData([
 			'show' => $show_mode,
 			'groupids' => $groupids,
@@ -79,7 +81,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 1
+			'show_opdata' => 2 
 		], $search_limit);
 
 		// Coleta de IDs
@@ -109,16 +111,38 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 5. Hidratação 2: Dados do Host e OpData (Trigger API)
+		// 5. Hidratação 2: Trigger + Resolver Macros (OpData)
 		$trigger_info_map = [];
+		$resolved_opdata = [];
+
 		if (!empty($triggerIds)) {
+			// Buscamos as triggers com dados necessários para resolver macros
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
-				'output' => ['triggerid', 'opdata'],
+				'output' => ['triggerid', 'expression', 'opdata', 'priority'],
 				'selectHosts' => ['hostid', 'name', 'maintenance_status'],
-				'preservekeys' => true,
-				'expandData' => true
+				'selectFunctions' => 'extend', // Necessário para resolver funções nas macros
+				'preservekeys' => true
 			]);
+
+			// Preparar dados para o resolvedor
+			// O resolvedor precisa saber qual evento corresponde a qual trigger para pegar o valor do item naquele momento
+			$problems_for_macros = [];
+			foreach ($data['problems'] as $p) {
+				if (isset($db_triggers[$p['objectid']])) {
+					// Indexa pelo eventid, pois o OpData é específico do evento
+					$problems_for_macros[$p['eventid']] = $p;
+				}
+			}
+
+			// Mágica do Zabbix: Resolver OpData
+			$resolved_opdata = CMacrosResolverHelper::resolveTriggerOpdata(
+				$db_triggers,
+				[
+					'events' => $problems_for_macros,
+					'html' => false // Retorna texto puro (sem links HTML)
+				]
+			);
 
 			foreach ($db_triggers as $tid => $trig) {
 				$host_data = ['id' => 0, 'name' => _('Unknown host'), 'maintenance' => 0];
@@ -130,9 +154,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 						'maintenance' => (int)$first_host['maintenance_status']
 					];
 				}
+				
 				$trigger_info_map[$tid] = [
 					'host' => $host_data,
-					'opdata' => $trig['opdata'] ?? ''
+					'raw_opdata' => $trig['opdata'] ?? '' // Backup caso a resolução falhe
 				];
 			}
 		}
@@ -145,12 +170,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
-				// Recupera status seguro do mapa de eventos
 				$status_info = $event_status_map[$eventid] ?? ['sup' => 0, 'ack' => 0];
 				$p_sup = $status_info['sup'];
 				$p_ack = $status_info['ack'];
 
-				// --- FILTRO ONLY SUPPRESSED ---
+				// Filtro Only Suppressed
 				if ($show_suppressed_only == 1 && $p_sup == 0) {
 					continue; 
 				}
@@ -170,9 +194,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 				// Filtro Problem Status
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+					// Se quer resolvido, mas este é ativo (r_eventid == 0), pula
 					if ($r_eventid == 0) continue; 
 				} elseif ($problem_status_input == WidgetForm::PROBLEM_STATUS_PROBLEM) {
+					// Se quer ativo, mas este é resolvido (r_eventid != 0), pula
 					if ($r_eventid != 0) continue; 
+				}
+
+				// Definir Operational Data: Prioridade para o resolvido
+				$opdata_final = '';
+				if (isset($resolved_opdata[$eventid])) {
+					$opdata_final = $resolved_opdata[$eventid];
+				} else {
+					$opdata_final = $info['raw_opdata']; // Fallback
 				}
 
 				$age_seconds = time() - $clock;
@@ -189,10 +223,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
-					
 					'ack_count' => $p_ack,
 					'suppressed' => $p_sup, 
-					'operational_data' => $info['opdata']
+					'operational_data' => $opdata_final // Valor correto expandido
 				];
 			}
 		}
