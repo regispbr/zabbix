@@ -9,6 +9,13 @@ use CScreenProblem;
 use CSettingsHelper;
 use Modules\AlarmWidget\Includes\WidgetForm;
 
+// Imports visuais do Zabbix
+use CUrl;
+use CLink;
+use CLinkAction;
+use CSpan;
+use CHintBoxHelper;
+
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
@@ -55,7 +62,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_symptoms' => false,
 			'show_suppressed' => $engine_show_suppressed,
 			'acknowledgement_status' => $ack_status,
-			'show_opdata' => 0 
+			'show_opdata' => 2 
 		], $search_limit);
 
 		$triggerIds = [];
@@ -67,14 +74,13 @@ class WidgetView extends CControllerDashboardWidgetView {
 			}
 		}
 
-		// 4. STATUS REAL (O PULO DO GATO)
-		// Buscamos r_eventid e r_clock explicitamente aqui, pois a engine falhou em entregar
+		// 4. STATUS REAL
 		$problem_details_map = [];
 		if (!empty($eventIds)) {
 			$db_problems = API::Problem()->get([
 				'eventids' => $eventIds,
-				'output' => ['eventid', 'r_eventid', 'r_clock', 'suppressed', 'acknowledged'], // Pedimos tudo
-				'recent' => true, // Importante para pegar os recém resolvidos
+				'output' => ['eventid', 'r_eventid', 'r_clock', 'suppressed', 'acknowledged'], 
+				'recent' => true, 
 				'preservekeys' => true
 			]);
 			
@@ -201,7 +207,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				$eventid = $problem['eventid'];
 				$triggerid = $problem['objectid'] ?? 0;
 
-				// BUSCA DETALHES CONFIÁVEIS DO MAPA CRIADO NO PASSO 4
 				$details = $problem_details_map[$eventid] ?? [
 					'sup' => 0, 'ack' => 0, 'r_eventid' => 0, 'r_clock' => 0
 				];
@@ -220,7 +225,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				if (in_array($host_info['id'], $exclude_hostids)) continue;
 				if ($exclude_maintenance == 1 && $host_info['maintenance'] == 1) continue;
 
-				// DECISÃO DE STATUS FINAL
 				$is_resolved = ($r_eventid != 0) || ($r_clock != 0);
 
 				if ($problem_status_input == WidgetForm::PROBLEM_STATUS_RESOLVED) {
@@ -240,16 +244,47 @@ class WidgetView extends CControllerDashboardWidgetView {
 				} else {
 					$age_seconds = time() - $clock;
 				}
+
+				// --- FORMATAÇÃO VISUAL NATIVA (Time, Status Color, Duration Popup) ---
+
+				// 1. Time (Com Link)
+				$time_obj = new CLink(date('d M Y H:i:s', $clock),
+					(new CUrl('tr_events.php'))
+						->setArgument('triggerid', $triggerid)
+						->setArgument('eventid', $eventid)
+				);
+
+				// 2. Status (Com Cor Fixa)
+				if ($is_resolved) {
+					// ZBX_STYLE_GREEN é 'green' no CSS do Zabbix
+					$status_obj = (new CSpan('RESOLVED'))->addClass(ZBX_STYLE_GREEN);
+				} else {
+					// ZBX_STYLE_RED ou ZBX_STYLE_PROBLEM_UNACK_FG (usaremos uma classe padrão de erro ou texto normal)
+					$status_obj = (new CSpan('PROBLEM'))->addClass(ZBX_STYLE_RED);
+				}
+
+				// 3. Duration/Age (Com Popup Timeline)
+				$age_str = $this->formatAge($age_seconds);
+				$age_obj = (new CLinkAction($age_str))
+					->setAjaxHint(CHintBoxHelper::getEventList(
+						$triggerid, 
+						$eventid, 
+						true, // show_timeline
+						false, // show_tags (padrão false para não poluir)
+						[], 
+						TAG_NAME_FULL, 
+						''
+					));
 				
 				$problems_final[] = [
 					'eventid' => $eventid,
 					'objectid' => $triggerid,
 					'name' => $name,
 					'severity' => $severity,
-					'status' => $is_resolved ? 'RESOLVED' : 'PROBLEM',
-					'clock' => $clock,
-					'time' => date('d M Y H:i:s', $clock),
-					'age' => $this->formatAge($age_seconds),
+					'status' => $status_obj, // Objeto HTML
+					'clock' => $clock, // Para ordenação
+					'time' => $time_obj, // Objeto HTML com Link
+					'age' => $age_obj, // Objeto HTML com Popup
 					'age_seconds' => $age_seconds,
 					'hostname' => $host_info['name'],
 					'hostid' => $host_info['id'],
