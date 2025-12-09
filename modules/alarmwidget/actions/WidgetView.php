@@ -87,7 +87,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$trigger_info_map = [];
 		
 		if (!empty($triggerIds)) {
-			// Busca triggers
 			$db_triggers = API::Trigger()->get([
 				'triggerids' => $triggerIds,
 				'output' => ['triggerid', 'opdata', 'expression'],
@@ -96,7 +95,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'preservekeys' => true
 			]);
 
-			// Coleta Item IDs
 			$itemIds = [];
 			foreach ($db_triggers as $trig) {
 				if (!empty($trig['opdata']) && !empty($trig['functions'])) {
@@ -106,12 +104,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 
-			// Busca itens com dados suficientes para formatação
 			$db_items = [];
 			if (!empty($itemIds)) {
+				// Adicionado valuemapid para evitar Fatal Error no formatHistoryValue
 				$db_items = API::Item()->get([
 					'itemids' => $itemIds,
-					'output' => ['itemid', 'lastvalue', 'units', 'value_type', 'valuemapid'], // valuemapid importante
+					'output' => ['itemid', 'lastvalue', 'units', 'value_type', 'valuemapid'],
 					'preservekeys' => true
 				]);
 			}
@@ -127,11 +125,10 @@ class WidgetView extends CControllerDashboardWidgetView {
 					];
 				}
 
-				// Lógica de substituição manual
 				$resolved_opdata = $trig['opdata'];
 				
 				if (!empty($resolved_opdata) && !empty($trig['functions'])) {
-					// Regex para {ITEM.LASTVALUE<N>} ou {ITEM.VALUE<N>}
+					// Regex melhorada: captura {ITEM.VALUE}, {ITEM.LASTVALUE}, com ou sem índice numérico
 					$resolved_opdata = preg_replace_callback('/\{ITEM\.(?:LAST)?VALUE(\d*)\}/', function($matches) use ($trig, $db_items) {
 						$index = (int)($matches[1] === '' ? 1 : $matches[1]);
 						$func_index = $index - 1; 
@@ -141,17 +138,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 							if (isset($db_items[$itemid])) {
 								$item = $db_items[$itemid];
 								
-								// --- CORREÇÃO DO FATAL ERROR ---
-								// O formatHistoryValue exige 'valuemap' como array, mesmo vazio.
-								if (!isset($item['valuemap'])) {
+								// Garante valuemap vazio se não existir (evita Fatal Error)
+								if (!array_key_exists('valuemap', $item)) {
 									$item['valuemap'] = [];
 								}
-								// -------------------------------
 
+								// Formata o valor usando helper nativo
 								return formatHistoryValue($item['lastvalue'], $item);
 							}
 						}
-						return $matches[0];
+						return $matches[0]; // Retorna a macro original se falhar
 					}, $resolved_opdata);
 				}
 
