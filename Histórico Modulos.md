@@ -53,7 +53,7 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
   
 - Averiguar todos os widgets para conferir se estão funcionando com essa funcionalidade, e consertar aqueles que não estão.  (2°) (✓)
 
-- Incluir Problem Status nos demais widgets -> Alarmwidget para usar de base.  (3°) ⏳
+- Incluir Problem Status nos demais widgets -> Alarmwidget para usar de base.  (3°) (✓)
 
 - Alterar demais widgets para mesma organização do filtro de severidade, ficando igual ao do alarmwdiget no forms.  (4°) (✓)
 
