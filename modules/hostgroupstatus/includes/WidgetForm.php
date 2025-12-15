@@ -12,7 +12,7 @@ use Zabbix\Widgets\{
 	Fields\CWidgetFieldMultiSelectHost,
 	Fields\CWidgetFieldRadioButtonList,
 	Fields\CWidgetFieldSeverities,
-	Fields\CWidgetFieldTags, 
+	Fields\CWidgetFieldTags,
 	Fields\CWidgetFieldTextBox
 };
 
@@ -22,6 +22,11 @@ class WidgetForm extends CWidgetForm {
 	public const COUNT_MODE_WITHOUT_ALARMS = 2;
 	public const COUNT_MODE_ALL = 3;
 	
+	// Constantes de Status
+	private const PROBLEM_STATUS_ALL = 0;
+	private const PROBLEM_STATUS_PROBLEM = 1;
+	private const PROBLEM_STATUS_RESOLVED = 2;
+
 	public function addFields(): self {
 		$this->addField(
 			(new CWidgetFieldMultiSelectGroup('hostgroups', _('Host groups')))
@@ -58,6 +63,16 @@ class WidgetForm extends CWidgetForm {
 
 		$this->addField(new CWidgetFieldTags('tags'));
 
+		// --- NOVO CAMPO: PROBLEM STATUS ---
+		$this->addField(
+			(new CWidgetFieldRadioButtonList('problem_status', _('Problem status'), [
+				self::PROBLEM_STATUS_ALL => _('All'),
+				self::PROBLEM_STATUS_PROBLEM => _('Problem'),
+				self::PROBLEM_STATUS_RESOLVED => _('Resolved')
+			]))->setDefault(self::PROBLEM_STATUS_PROBLEM)
+		);
+		// ----------------------------------
+
 		$this->addField(
 			(new CWidgetFieldCheckBox('show_acknowledged', _('Show acknowledged problems')))
 				->setDefault(1)
@@ -68,12 +83,10 @@ class WidgetForm extends CWidgetForm {
 				->setDefault(0)
 		);
 		
-		// --- NOVO CAMPO ---
 		$this->addField(
 			(new CWidgetFieldCheckBox('show_suppressed_only', _('Show ONLY suppressed')))
 				->setDefault(0)
 		);
-		// ------------------
 
 		$this->addField(
 			(new CWidgetFieldCheckBox('exclude_maintenance', _('Exclude hosts in maintenance')))
