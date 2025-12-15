@@ -9,22 +9,28 @@ use Modules\HostGroupStatus\Includes\WidgetForm;
 
 class WidgetView extends CControllerDashboardWidgetView {
 
+	// Constantes locais
+	private const PROBLEM_STATUS_ALL = 0;
+	private const PROBLEM_STATUS_PROBLEM = 1;
+	private const PROBLEM_STATUS_RESOLVED = 2;
+
 	protected function doAction(): void {
 		$hostgroups = $this->fields_values['hostgroups'] ?? [];
 		$hosts = $this->fields_values['hosts'] ?? [];
 		$count_mode = $this->fields_values['count_mode'] ?? WidgetForm::COUNT_MODE_WITH_ALARMS;
 		$exclude_hosts = $this->fields_values['exclude_hosts'] ?? [];
 		
+		// Filtros de Problema
 		$problem_filters = [
 			'evaltype' => $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR,
 			'tags' => $this->fields_values['tags'] ?? [],
 			'show_acknowledged' => $this->fields_values['show_acknowledged'] ?? 1,
 			'show_suppressed' => $this->fields_values['show_suppressed'] ?? 0,
 			'show_suppressed_only' => $this->fields_values['show_suppressed_only'] ?? 0,
-			'exclude_maintenance' => $this->fields_values['exclude_maintenance'] ?? 0
+			'exclude_maintenance' => $this->fields_values['exclude_maintenance'] ?? 0,
+			'problem_status' => $this->fields_values['problem_status'] ?? self::PROBLEM_STATUS_PROBLEM // NOVO
 		];
 
-		// Severidades (Array de IDs)
 		$severity_ids = $this->fields_values['severities'] ?? [];
 
 		$host_data = $this->getHostStatusData(
@@ -86,7 +92,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		array $severity_ids, array $problem_filters
 	): array {
 		
-		// === PASSO 1: Obter Hosts ===
+		// === PASSO 1: Obter Hosts do Grupo ===
 		$host_params = [
 			'output' => ['hostid'],
 			'monitored_hosts' => true,
@@ -109,11 +115,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$host_params['hostids'] = array_diff($host_params['hostids'], $exclude_hosts);
 		}
 		
-		try {
-			$all_hosts = API::Host()->get($host_params);
-		} catch (\Exception $e) {
-			return ['count' => 0];
-		}
+		$all_hosts = API::Host()->get($host_params);
 		
 		if (!empty($exclude_hosts)) {
 			$all_hosts = array_diff_key($all_hosts, array_flip($exclude_hosts));
@@ -129,84 +131,80 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return ['count' => $total_host_count];
 		}
 
-		// === PASSO 2: Obter Hosts com Problemas (Corrigido) ===
+		// === PASSO 2: Obter Hosts com Problemas (LÓGICA NOVA) ===
 		$hosts_with_alarms_map = [];
 		
 		if (!empty($severity_ids)) {
-			try {
-				// 2.1 Buscar Triggers (para saber os Hosts)
+			// Prepara opções da API Problem
+			// Aqui é onde garantimos que o filtro de TAGS funcione
+			$problem_options = [
+				'output' => ['objectid', 'suppressed', 'acknowledged', 'r_eventid', 'r_clock'], // Pedimos dados de recuperação
+				'source' => EVENT_SOURCE_TRIGGERS,
+				'object' => EVENT_OBJECT_TRIGGER,
+				'severities' => $severity_ids, // Severidade vai direto aqui
+				'evaltype' => $problem_filters['evaltype'],
+				'tags' => $problem_filters['tags'] // Tags vão direto aqui
+			];
+
+			// Define se buscamos histórico (recent = true) ou apenas ativos (recent = false)
+			// Se o filtro for "All" ou "Resolved", precisamos do histórico (recent=true)
+			$want_history = ($problem_filters['problem_status'] != self::PROBLEM_STATUS_PROBLEM);
+			$problem_options['recent'] = $want_history;
+
+			// Lógica de Supressão
+			if ($problem_filters['show_suppressed_only'] == 1) {
+				$problem_options['suppressed'] = true;
+			} elseif ($problem_filters['show_suppressed'] == 0) {
+				$problem_options['suppressed'] = false;
+			}
+			// Se show_suppressed == 1, não filtramos (traz tudo)
+
+			// BUSCA OS PROBLEMAS
+			$problems = API::Problem()->get($problem_options);
+
+			if (!empty($problems)) {
+				// Coleta Trigger IDs para descobrir os Hosts
+				$triggerids = array_column($problems, 'objectid');
+				
+				// Busca Triggers para mapear Trigger -> Host
+				// Filtramos por hostids do grupo para otimizar e garantir pertinência
 				$triggers = API::Trigger()->get([
 					'output' => ['triggerid'],
-					'selectHosts' => ['hostid'], // AQUI pode usar selectHosts
-					'hostids' => $all_host_ids,
-					'filter' => [
-						'value' => TRIGGER_VALUE_TRUE, // Apenas triggers em estado de problema
-						'priority' => $severity_ids,
-						'status' => TRIGGER_STATUS_ENABLED
-					],
+					'selectHosts' => ['hostid'],
+					'triggerids' => $triggerids,
+					'hostids' => $all_host_ids, // Crucial: Só triggers dos hosts selecionados
 					'monitored' => true,
-					'skipDependent' => true,
 					'preservekeys' => true
 				]);
 
-				if (!empty($triggers)) {
-					$triggerids = array_keys($triggers);
+				foreach ($problems as $problem) {
+					$triggerid = $problem['objectid'];
+					
+					// Filtros de Ack (feitos no PHP pois a API tem limitações combinatórias as vezes)
+					$p_ack = (int)$problem['acknowledged'];
+					if ($p_ack == 1 && !$problem_filters['show_acknowledged']) continue;
 
-					// 2.2 Buscar Problemas (para saber status Supressed/Ack)
-					// Não usamos selectHosts aqui, pois dá erro.
-					$problem_options = [
-						'output' => ['objectid', 'suppressed', 'acknowledged'],
-						'objectids' => $triggerids,
-						'source' => EVENT_SOURCE_TRIGGERS,
-						'object' => EVENT_OBJECT_TRIGGER,
-						'recent' => true,
-						'evaltype' => $problem_filters['evaltype'],
-						'tags' => $problem_filters['tags']
-					];
+					// Filtro de Status (Problem vs Resolved)
+					$r_eventid = (int)$problem['r_eventid'];
+					$r_clock = (int)$problem['r_clock'];
+					$is_resolved = ($r_eventid != 0 || $r_clock != 0);
 
-					// Lógica de Supressão na API
-					if ($problem_filters['show_suppressed_only'] == 1) {
-						$problem_options['suppressed'] = true;
-					} elseif ($problem_filters['show_suppressed'] == 1) {
-						// Trazer tudo (duas chamadas para garantir)
-						$p1 = API::Problem()->get($problem_options + ['suppressed' => false]);
-						$p2 = API::Problem()->get($problem_options + ['suppressed' => true]);
-						$problems = array_merge($p1, $p2);
-					} else {
-						// Padrão: Apenas não suprimidos
-						$problem_options['suppressed'] = false;
-						$problems = API::Problem()->get($problem_options);
+					if ($problem_filters['problem_status'] == self::PROBLEM_STATUS_RESOLVED) {
+						if (!$is_resolved) continue;
+					} elseif ($problem_filters['problem_status'] == self::PROBLEM_STATUS_PROBLEM) {
+						if ($is_resolved) continue;
 					}
 
-					// Se não foi a estratégia de merge, executa agora
-					if (!isset($problems)) {
-						$problems = API::Problem()->get($problem_options);
-					}
-
-					// 2.3 Cruzamento
-					foreach ($problems as $problem) {
-						$triggerid = $problem['objectid'];
-						$p_ack = (int)$problem['acknowledged'];
-						$p_sup = (int)$problem['suppressed'];
-
-						// Filtros PHP de segurança
-						if ($p_ack == 1 && !$problem_filters['show_acknowledged']) continue;
-						
-						if ($problem_filters['show_suppressed_only'] == 1 && $p_sup == 0) continue;
-						if ($problem_filters['show_suppressed'] == 0 && $p_sup == 1) continue;
-
-						// Mapear para o Host usando a Trigger
-						if (isset($triggers[$triggerid]['hosts'])) {
-							foreach ($triggers[$triggerid]['hosts'] as $host) {
-								if (isset($all_hosts[$host['hostid']])) {
-									$hosts_with_alarms_map[$host['hostid']] = true;
-								}
+					// Se passou nos filtros, marca o host
+					if (isset($triggers[$triggerid]['hosts'])) {
+						foreach ($triggers[$triggerid]['hosts'] as $host) {
+							// Garantia dupla que o host pertence ao grupo filtrado
+							if (isset($all_hosts[$host['hostid']])) {
+								$hosts_with_alarms_map[$host['hostid']] = true;
 							}
 						}
 					}
 				}
-			} catch (\Exception $e) {
-				// error_log("HostGroupStatus Error: " . $e->getMessage());
 			}
 		}
 		
