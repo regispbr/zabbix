@@ -23,7 +23,6 @@ class WidgetHostGroupAlarms extends CWidget {
 			this._body.addEventListener('mouseleave', this.onMouseLeave.bind(this));
 		}
 		
-		// Injeta estilos da tabela se não existirem
 		this.injectTableStyles();
 	}
 
@@ -39,7 +38,7 @@ class WidgetHostGroupAlarms extends CWidget {
 				box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 				z-index: 1000;
 				position: absolute;
-				max-width: 600px;
+				max-width: 700px;
 				padding: 0;
 				border-radius: 2px;
 			}
@@ -82,6 +81,9 @@ class WidgetHostGroupAlarms extends CWidget {
 			.hga-severity.sev-4 { background: #E97659; color: #fff; }
 			.hga-severity.sev-5 { background: #E45959; color: #fff; }
 			
+			.hga-status-resolved { color: #59db8f; font-weight: bold; }
+			.hga-status-problem { color: #e45959; font-weight: bold; }
+
 			.hga-ack-btn {
 				color: #7499FF;
 				text-decoration: none;
@@ -236,7 +238,6 @@ class WidgetHostGroupAlarms extends CWidget {
 		this.hideTooltip();
 	}
 
-	// --- AQUI ESTÁ A MUDANÇA PRINCIPAL (TABELA) ---
 	buildTooltipContent(alarms, max_items) {
 		const displayed_alarms = alarms.slice(0, max_items);
 		
@@ -244,7 +245,7 @@ class WidgetHostGroupAlarms extends CWidget {
 			<table class="hostgroup-alarms-table">
 				<thead>
 					<tr>
-						<th>Host</th>
+						<th>Status</th> <th>Host</th>
 						<th>Severity</th>
 						<th>Problem</th>
 						<th>Ack</th>
@@ -258,12 +259,14 @@ class WidgetHostGroupAlarms extends CWidget {
 			const is_ack = (alarm.acknowledged == 1);
 			const is_sup = (alarm.suppressed == 1);
 			
-			// Ícones
+			// Lógica de Status
+			const status_text = alarm.status_text || 'PROBLEM';
+			const status_class = alarm.is_resolved ? 'hga-status-resolved' : 'hga-status-problem';
+
 			let ack_html = '';
 			if (is_sup) ack_html += '<span class="icon-eye-off" title="Suppressed" style="margin-right: 5px;"></span>';
 			if (is_ack) ack_html += '<span style="margin-right: 5px;">✔</span>';
 			
-			// Botão Update/Ack
 			if (alarm.eventid) {
 				const btn_text = is_ack ? 'Update' : 'Ack';
 				ack_html += `<a href="javascript:void(0)" class="hga-ack-btn" onclick="acknowledgePopUp({eventids: ['${alarm.eventid}']}); return false;">${btn_text}</a>`;
@@ -271,6 +274,7 @@ class WidgetHostGroupAlarms extends CWidget {
 
 			html += `
 				<tr>
+					<td class="${status_class}">${status_text}</td>
 					<td>${this.escapeHtml(alarm.host_name)}</td>
 					<td><span class="hga-severity ${sev_class}">${alarm.severity_name}</span></td>
 					<td>${this.escapeHtml(alarm.description)}</td>
@@ -297,17 +301,14 @@ class WidgetHostGroupAlarms extends CWidget {
 		const viewport_width = window.innerWidth;
 		const viewport_height = window.innerHeight;
 
-		// Tenta centralizar embaixo primeiro
 		let left = widget_rect.left + (widget_rect.width / 2) - (tooltip_rect.width / 2);
 		let top = widget_rect.bottom + 10 + window.scrollY;
 
-		// Ajuste horizontal (se sair da tela)
 		if (left < 10) left = 10;
 		if (left + tooltip_rect.width > viewport_width - 10) {
 			left = viewport_width - tooltip_rect.width - 10;
 		}
 
-		// Ajuste vertical (se não couber embaixo, joga pra cima)
 		if (top + tooltip_rect.height > viewport_height + window.scrollY - 10) {
 			top = widget_rect.top + window.scrollY - tooltip_rect.height - 10;
 		}
@@ -338,6 +339,7 @@ class WidgetHostGroupAlarms extends CWidget {
 	getUpdateRequestData() {
 		return {
 			...super.getUpdateRequestData(),
+			problem_status: this._fields.problem_status || 1, // ADICIONADO PARA O AUTO-REFRESH
 			hostgroups: this._fields.hostgroups || [],
 			hosts: this._fields.hosts || [],
 			exclude_hosts: this._fields.exclude_hosts || [],
