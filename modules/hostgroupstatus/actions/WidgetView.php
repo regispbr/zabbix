@@ -20,22 +20,24 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$count_mode = $this->fields_values['count_mode'] ?? WidgetForm::COUNT_MODE_WITH_ALARMS;
 		$exclude_hosts = $this->fields_values['exclude_hosts'] ?? [];
 		
-		// Filtros de Problema
+		// Filtros
+		$evaltype = $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR;
+		$tags = $this->fields_values['tags'] ?? [];
+		
 		$problem_filters = [
-			'evaltype' => $this->fields_values['evaltype'] ?? TAG_EVAL_TYPE_AND_OR,
-			'tags' => $this->fields_values['tags'] ?? [],
 			'show_acknowledged' => $this->fields_values['show_acknowledged'] ?? 1,
 			'show_suppressed' => $this->fields_values['show_suppressed'] ?? 0,
 			'show_suppressed_only' => $this->fields_values['show_suppressed_only'] ?? 0,
 			'exclude_maintenance' => $this->fields_values['exclude_maintenance'] ?? 0,
-			'problem_status' => $this->fields_values['problem_status'] ?? self::PROBLEM_STATUS_PROBLEM // NOVO
+			'problem_status' => $this->fields_values['problem_status'] ?? self::PROBLEM_STATUS_PROBLEM
 		];
 
 		$severity_ids = $this->fields_values['severities'] ?? [];
 
 		$host_data = $this->getHostStatusData(
 			$hostgroups, $hosts, $exclude_hosts, $count_mode, 
-			$severity_ids, $problem_filters
+			$severity_ids, $problem_filters,
+			$evaltype, $tags // Passamos tags separadamente
 		);
 
 		$group_name = '';
@@ -89,15 +91,22 @@ class WidgetView extends CControllerDashboardWidgetView {
 
 	private function getHostStatusData(
 		array $hostgroups, array $hosts, array $exclude_hosts, int $count_mode,
-		array $severity_ids, array $problem_filters
+		array $severity_ids, array $problem_filters,
+		int $evaltype, array $tags
 	): array {
 		
-		// === PASSO 1: Obter Hosts do Grupo ===
+		// === PASSO 1: Obter Hosts do Grupo (COM FILTRO DE TAGS) ===
 		$host_params = [
 			'output' => ['hostid'],
 			'monitored_hosts' => true,
 			'preservekeys' => true,
 		];
+
+		// APLICANDO FILTRO DE TAGS NA BUSCA DE HOSTS
+		if (!empty($tags)) {
+			$host_params['evaltype'] = $evaltype;
+			$host_params['tags'] = $tags;
+		}
 
 		if ($problem_filters['exclude_maintenance'] == 1) {
 			$host_params['filter']['maintenance_status'] = HOST_MAINTENANCE_STATUS_OFF;
@@ -111,12 +120,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 			return ['count' => 0];
 		}
 
-		if (!empty($exclude_hosts) && !empty($host_params['hostids'])) {
-			$host_params['hostids'] = array_diff($host_params['hostids'], $exclude_hosts);
+		if (!empty($exclude_hosts)) {
+			// Se já temos hostids, subtraímos
+			if (isset($host_params['hostids'])) {
+				$host_params['hostids'] = array_diff($host_params['hostids'], $exclude_hosts);
+			} else {
+				// Se não temos (busca por grupo), não podemos usar exclude_hosts na API diretamente de forma simples
+				// Faremos a exclusão pós-busca
+			}
 		}
 		
 		$all_hosts = API::Host()->get($host_params);
 		
+		// Exclusão manual se necessário
 		if (!empty($exclude_hosts)) {
 			$all_hosts = array_diff_key($all_hosts, array_flip($exclude_hosts));
 		}
@@ -126,28 +142,28 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$total_host_count = count($all_hosts);
 		$all_host_ids = array_keys($all_hosts);
 
-		// Se modo "All Hosts", retornamos direto
+		// Se modo "All Hosts", retornamos o total filtrado por tags
 		if ($count_mode === WidgetForm::COUNT_MODE_ALL) {
 			return ['count' => $total_host_count];
 		}
 
-		// === PASSO 2: Obter Hosts com Problemas (LÓGICA NOVA) ===
+		// === PASSO 2: Obter Hosts com Problemas (LÓGICA APURADA) ===
 		$hosts_with_alarms_map = [];
 		
 		if (!empty($severity_ids)) {
-			// Prepara opções da API Problem
-			// Aqui é onde garantimos que o filtro de TAGS funcione
+			// Opções base para API Problem
 			$problem_options = [
-				'output' => ['objectid', 'suppressed', 'acknowledged', 'r_eventid', 'r_clock'], // Pedimos dados de recuperação
+				'output' => ['objectid', 'suppressed', 'acknowledged', 'r_eventid', 'r_clock'],
 				'source' => EVENT_SOURCE_TRIGGERS,
 				'object' => EVENT_OBJECT_TRIGGER,
-				'severities' => $severity_ids, // Severidade vai direto aqui
-				'evaltype' => $problem_filters['evaltype'],
-				'tags' => $problem_filters['tags'] // Tags vão direto aqui
+				'severities' => $severity_ids,
+				// Se quisermos filtrar PROBLEMAS por tag também, descomente abaixo.
+				// Mas geralmente o filtro de tags do widget é para o HOST.
+				// 'evaltype' => $evaltype, 
+				// 'tags' => $tags 
 			];
 
-			// Define se buscamos histórico (recent = true) ou apenas ativos (recent = false)
-			// Se o filtro for "All" ou "Resolved", precisamos do histórico (recent=true)
+			// Configura Recent/History com base no Status
 			$want_history = ($problem_filters['problem_status'] != self::PROBLEM_STATUS_PROBLEM);
 			$problem_options['recent'] = $want_history;
 
@@ -157,22 +173,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 			} elseif ($problem_filters['show_suppressed'] == 0) {
 				$problem_options['suppressed'] = false;
 			}
-			// Se show_suppressed == 1, não filtramos (traz tudo)
 
-			// BUSCA OS PROBLEMAS
+			// Busca Problemas
 			$problems = API::Problem()->get($problem_options);
 
 			if (!empty($problems)) {
-				// Coleta Trigger IDs para descobrir os Hosts
 				$triggerids = array_column($problems, 'objectid');
 				
 				// Busca Triggers para mapear Trigger -> Host
-				// Filtramos por hostids do grupo para otimizar e garantir pertinência
 				$triggers = API::Trigger()->get([
 					'output' => ['triggerid'],
 					'selectHosts' => ['hostid'],
 					'triggerids' => $triggerids,
-					'hostids' => $all_host_ids, // Crucial: Só triggers dos hosts selecionados
+					'hostids' => $all_host_ids, // Crucial: Só considera triggers dos hosts que já filtramos (por tag/grupo)
 					'monitored' => true,
 					'preservekeys' => true
 				]);
@@ -180,11 +193,11 @@ class WidgetView extends CControllerDashboardWidgetView {
 				foreach ($problems as $problem) {
 					$triggerid = $problem['objectid'];
 					
-					// Filtros de Ack (feitos no PHP pois a API tem limitações combinatórias as vezes)
+					// Filtros de Ack
 					$p_ack = (int)$problem['acknowledged'];
 					if ($p_ack == 1 && !$problem_filters['show_acknowledged']) continue;
 
-					// Filtro de Status (Problem vs Resolved)
+					// Filtro de Status (Active vs Resolved)
 					$r_eventid = (int)$problem['r_eventid'];
 					$r_clock = (int)$problem['r_clock'];
 					$is_resolved = ($r_eventid != 0 || $r_clock != 0);
@@ -198,7 +211,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					// Se passou nos filtros, marca o host
 					if (isset($triggers[$triggerid]['hosts'])) {
 						foreach ($triggers[$triggerid]['hosts'] as $host) {
-							// Garantia dupla que o host pertence ao grupo filtrado
+							// O host já foi filtrado no Passo 1, então se ele está em $all_hosts, é válido
 							if (isset($all_hosts[$host['hostid']])) {
 								$hosts_with_alarms_map[$host['hostid']] = true;
 							}
