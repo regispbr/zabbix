@@ -376,10 +376,16 @@ class WidgetMap extends CWidget {
 				if (event_ids.length > 0 && event_ids.length <= 5) {
 					event_ids.forEach(eventid => {
 						const problem = problem_events[eventid];
-						const color = colors[problem.severity] || '#97AAB3';
+						let color = colors[problem.severity] || '#97AAB3';
+						let status_prefix = '';
+						
+						if (problem.is_resolved) {
+							color = '#59db8f'; // Verde Zabbix
+							status_prefix = '[RESOLVED] ';
+						}
 						
 						hosts_html += `<li class="map-popup-problem-item" style="color: ${color};">
-										 (${this.escapeHtml(problem.name)})`;
+										 ${status_prefix}(${this.escapeHtml(problem.name)})`;
 						
 						// --- ÍCONE NO POPUP DO PIN ---
 						if (problem.suppressed == 1) {
@@ -434,7 +440,7 @@ class WidgetMap extends CWidget {
 		`;
 	}
 
-	buildAllProblemsHtml() {
+buildAllProblemsHtml() {
 		const problems = this._vars.detailed_problems || [];
 		const colors = this._vars.severity_colors || {};
 		const severities = this._vars.severity_names || {};
@@ -447,7 +453,7 @@ class WidgetMap extends CWidget {
 			<table class="map-modal-table">
 				<thead>
 					<tr>
-						<th>Host</th>
+						<th>Status</th> <th>Host</th>
 						<th>Severity</th>
 						<th>Problem</th>
 						<th>Age</th>
@@ -461,30 +467,16 @@ class WidgetMap extends CWidget {
 			const sev_color = colors[problem.severity] || '#97AAB3';
 			const sev_name = severities[problem.severity] || 'Unknown';
 			const sev_text_class = (problem.severity == 2 || problem.severity == 3 || problem.severity == 0) ? 'sev-text-dark' : 'sev-text-light';
-			const button_text = problem.acknowledged ? 'Update' : '(Ack)';
 			
-			const ack_button = `
-				<a class="map-popup-ack-btn" 
-				   href="#" 
-				   style="margin-left: 5px; white-space: nowrap;"
-				   onClick="acknowledgePopUp({eventids: ['${problem.eventid}']}); event.stopPropagation(); return false;">
-				   ${button_text}
-				</a>`;
+			// STATUS
+			const status_text = problem.is_resolved ? 'RESOLVED' : 'PROBLEM';
+			const status_color = problem.is_resolved ? '#59db8f' : '#e45959'; // Verde / Vermelho
 
-			let ack_html = `<span style="white-space: nowrap;">`;
+			// ... (lógica de botões) ...
 			
-			// --- ÍCONES NA TABELA MODAL ---
-			if (problem.suppressed == 1) {
-				ack_html += `<span class="icon-eye-off" style="margin-right: 5px;"></span>`;
-			}
-			if (problem.acknowledged) {
-				ack_html += `<span class="map-popup-ack-icon">✔</span>`;
-			}
-			ack_html += ack_button;
-			ack_html += `</span>`;
-
 			html += `
 				<tr>
+					<td data-label="Status" style="color: ${status_color}; font-weight: bold;">${status_text}</td>
 					<td data-label="Host">${this.escapeHtml(problem.hostname)}</td>
 					<td data-label="Severity">
 						<span class="map-modal-severity-badge ${sev_text_class}" style="background-color: ${sev_color};">
