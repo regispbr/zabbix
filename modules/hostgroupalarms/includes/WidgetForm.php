@@ -18,12 +18,17 @@ use Zabbix\Widgets\{
 
 class WidgetForm extends CWidgetForm {
 
+	// Constantes locais para facilitar a leitura se não estiverem globais
+	private const PROBLEM_STATUS_ALL = 0;
+	private const PROBLEM_STATUS_PROBLEM = 1;
+	private const PROBLEM_STATUS_RESOLVED = 2;
+
 	public function addFields(): self {
 		$this->addField(new CWidgetFieldMultiSelectGroup('hostgroups', _('Host groups')));
 		$this->addField(new CWidgetFieldMultiSelectHost('hosts', _('Hosts')));
 		$this->addField(new CWidgetFieldMultiSelectHost('exclude_hosts', _('Exclude hosts')));
 
-		// --- SEVERIDADE (Sintaxe Segura) ---
+		// --- SEVERIDADE ---
 		$field_severities = new CWidgetFieldSeverities('severities', _('Severity'));
 		$field_severities->setDefault([
 			TRIGGER_SEVERITY_NOT_CLASSIFIED,
@@ -35,7 +40,7 @@ class WidgetForm extends CWidgetForm {
 		]);
 		$this->addField($field_severities);
 
-		// --- TAGS (Sintaxe Segura) ---
+		// --- TAGS ---
 		$field_evaltype = new CWidgetFieldRadioButtonList('evaltype', _('Problem Tags'), [
 			TAG_EVAL_TYPE_AND_OR => _('And/Or'),
 			TAG_EVAL_TYPE_OR => _('Or')
@@ -47,6 +52,16 @@ class WidgetForm extends CWidgetForm {
 		$field_tags->setDefault([]);
 		$this->addField($field_tags);
 
+		// --- NOVO CAMPO: PROBLEM STATUS (Igual ao AlarmWidget) ---
+		$field_prob_status = new CWidgetFieldRadioButtonList('problem_status', _('Problem status'), [
+			self::PROBLEM_STATUS_ALL => _('All'),
+			self::PROBLEM_STATUS_PROBLEM => _('Problem'),
+			self::PROBLEM_STATUS_RESOLVED => _('Resolved')
+		]);
+		$field_prob_status->setDefault(self::PROBLEM_STATUS_PROBLEM); // Padrão: Só problemas ativos
+		$this->addField($field_prob_status);
+		// --------------------------------------------------------
+
 		// --- OPÇÕES DE EXIBIÇÃO ---
 		$field_ack = new CWidgetFieldCheckBox('show_acknowledged', _('Show acknowledged'));
 		$field_ack->setDefault(1);
@@ -56,7 +71,6 @@ class WidgetForm extends CWidgetForm {
 		$field_sup->setDefault(0);
 		$this->addField($field_sup);
 		
-		// NOVO CAMPO: ONLY SUPPRESSED
 		$field_sup_only = new CWidgetFieldCheckBox('show_suppressed_only', _('Show ONLY suppressed'));
 		$field_sup_only->setDefault(0);
 		$this->addField($field_sup_only);
