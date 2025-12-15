@@ -453,7 +453,8 @@ buildAllProblemsHtml() {
 			<table class="map-modal-table">
 				<thead>
 					<tr>
-						<th>Status</th> <th>Host</th>
+						<th>Status</th>
+						<th>Host</th>
 						<th>Severity</th>
 						<th>Problem</th>
 						<th>Age</th>
@@ -468,12 +469,33 @@ buildAllProblemsHtml() {
 			const sev_name = severities[problem.severity] || 'Unknown';
 			const sev_text_class = (problem.severity == 2 || problem.severity == 3 || problem.severity == 0) ? 'sev-text-dark' : 'sev-text-light';
 			
-			// STATUS
+			// Lógica de Status
 			const status_text = problem.is_resolved ? 'RESOLVED' : 'PROBLEM';
-			const status_color = problem.is_resolved ? '#59db8f' : '#e45959'; // Verde / Vermelho
+			const status_color = problem.is_resolved ? '#59db8f' : '#e45959';
 
-			// ... (lógica de botões) ...
+			// --- DEFINIÇÃO DO ACK_HTML (Que estava faltando) ---
+			const button_text = problem.acknowledged ? 'Update' : '(Ack)';
 			
+			const ack_button = `
+				<a class="map-popup-ack-btn" 
+				   href="#" 
+				   style="margin-left: 5px; white-space: nowrap;"
+				   onClick="acknowledgePopUp({eventids: ['${problem.eventid}']}); event.stopPropagation(); return false;">
+				   ${button_text}
+				</a>`;
+
+			let ack_html = `<span style="white-space: nowrap;">`;
+			
+			if (problem.suppressed == 1) {
+				ack_html += `<span class="icon-eye-off" style="margin-right: 5px;"></span>`;
+			}
+			if (problem.acknowledged) {
+				ack_html += `<span class="map-popup-ack-icon">✔</span>`;
+			}
+			ack_html += ack_button;
+			ack_html += `</span>`;
+			// ---------------------------------------------------
+
 			html += `
 				<tr>
 					<td data-label="Status" style="color: ${status_color}; font-weight: bold;">${status_text}</td>
