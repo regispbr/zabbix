@@ -11,11 +11,12 @@ $form
 	->addField(new CWidgetFieldSeveritiesView($data['fields']['severities']))
 	->addField(new CWidgetFieldRadioButtonListView($data['fields']['evaltype']))
 	->addField(new CWidgetFieldTagsView($data['fields']['tags']))
+	// --- NOVO ---
+	->addField(new CWidgetFieldRadioButtonListView($data['fields']['problem_status']))
+	// ------------
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['show_acknowledged']))
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['show_suppressed']))
-	// Novo campo
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['show_suppressed_only']))
-	
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['exclude_maintenance']))
 	->addField(new CWidgetFieldRadioButtonListView($data['fields']['count_mode']))
 	->addField(new CWidgetFieldColorView($data['fields']['widget_color']))
