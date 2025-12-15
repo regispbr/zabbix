@@ -2,10 +2,6 @@
 
 use Modules\HostGroupAlarms\Includes\WidgetForm;
 
-/**
- * Widget form view.
- */
-
 $form = new CWidgetFormView($data);
 
 $form
@@ -15,11 +11,12 @@ $form
 	->addField(new CWidgetFieldSeveritiesView($data['fields']['severities']))
 	->addField(new CWidgetFieldRadioButtonListView($data['fields']['evaltype']))
 	->addField(new CWidgetFieldTagsView($data['fields']['tags']))
+	// --- NOVO CAMPO ---
+	->addField(new CWidgetFieldRadioButtonListView($data['fields']['problem_status']))
+	// ------------------
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['show_acknowledged']))
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['show_suppressed']))
-	// --- NOVO CAMPO ---
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['show_suppressed_only']))
-	// ------------------
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['exclude_maintenance']))
 	->addField(new CWidgetFieldCheckBoxView($data['fields']['show_group_name']))
 	->addField(new CWidgetFieldTextBoxView($data['fields']['group_name_text']))
