@@ -29,6 +29,7 @@ jQuery(function($) {
 			'show_suppressed',
 			'exclude_maintenance', // <-- MUDANÇA AQUI: Adicionado
 			'count_mode',
+			'problem_status',
 			'widget_color',
 			'show_group_name',
 			'group_name_text',
