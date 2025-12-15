@@ -41,7 +41,8 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$problem_filters = [
 			'show_acknowledged' => $this->fields_values['show_acknowledged'] ?? 1,
 			'show_suppressed' => $this->fields_values['show_suppressed'] ?? 0,
-			'show_suppressed_only' => $this->fields_values['show_suppressed_only'] ?? 0
+			'show_suppressed_only' => $this->fields_values['show_suppressed_only'] ?? 0,
+			'problem_status' => $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM // NOVO
 		];
 
 		$exclude_maintenance = (bool)($this->fields_values['exclude_maintenance'] ?? 0);
@@ -98,7 +99,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$params = [
 			'output' => ['hostid', 'name', 'maintenance_status'],
 			'selectInventory' => ['location_lat', 'location_lon'],
-			'selectHostGroups' => ['groupid', 'name'],
+			'selectHostGroups' => ['groupid', 'name'], // Traz todos os grupos
 			'monitored_hosts' => true,
 			'preservekeys' => true,
 			'evaltype' => $evaltype,
@@ -137,11 +138,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 			
 			if (!empty($triggers)) {
 				$prob_options = [
-					'output' => ['objectid', 'severity', 'acknowledged', 'suppressed', 'eventid', 'name'],
+					'output' => ['objectid', 'severity', 'acknowledged', 'suppressed', 'eventid', 'name', 'r_eventid', 'r_clock'], // Add Recovery
 					'objectids' => array_keys($triggers),
 					'symptom' => false, 
 					'preservekeys' => true
 				];
+
+				// Se filtro for All ou Resolved, busca histórico
+				if ($problem_filters['problem_status'] != WidgetForm::PROBLEM_STATUS_PROBLEM) {
+					$prob_options['recent'] = true;
+				}
 				
 				if ($problem_filters['show_suppressed_only'] == 1) {
 					$prob_options['suppressed'] = true;
@@ -154,6 +160,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$problems_api = \API::Problem()->get($prob_options);
 				}
 				
+				// Fallback
 				if (!isset($problems_api) || (empty($problems_api) && $problem_filters['show_suppressed'] != 1)) {
 					if (!isset($problems_api)) $problems_api = \API::Problem()->get($prob_options);
 				}
@@ -164,10 +171,20 @@ class WidgetView extends CControllerDashboardWidgetView {
 		foreach ($problems_api as $problem) {
 			$p_ack = (int)$problem['acknowledged'];
 			$p_sup = (int)$problem['suppressed'];
+			$r_eventid = (int)($problem['r_eventid'] ?? 0);
+			$r_clock = (int)($problem['r_clock'] ?? 0);
+			$is_resolved = ($r_eventid != 0 || $r_clock != 0);
 
 			if ($p_ack == 1 && !$problem_filters['show_acknowledged']) continue;
 			if ($problem_filters['show_suppressed_only'] == 1 && $p_sup == 0) continue;
 			if ($problem_filters['show_suppressed'] == 0 && $p_sup == 1) continue;
+
+			// Filtro de Status
+			if ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+				if (!$is_resolved) continue;
+			} elseif ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_PROBLEM) {
+				if ($is_resolved) continue;
+			}
 			
 			$trigger_id = $problem['objectid'];
 			if (!isset($triggers[$trigger_id])) continue;
@@ -181,14 +198,19 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 				
 				$sev = (int)$problem['severity'];
-				$key = $p_ack == 1 ? 'acked' : 'unacked';
 				
-				$problems_by_host[$hostid]['counts'][$sev][$key]++;
+				// Contagem para o Pin (Só conta se ATIVO)
+				if (!$is_resolved) {
+					$key = $p_ack == 1 ? 'acked' : 'unacked';
+					$problems_by_host[$hostid]['counts'][$sev][$key]++;
+				}
+
 				$problems_by_host[$hostid]['events'][$problem['eventid']] = [
 					'name' => $problem['name'],
 					'severity' => $sev,
 					'acknowledged' => $p_ack,
-					'suppressed' => $p_sup // <-- ADICIONADO PARA O FRONTEND
+					'suppressed' => $p_sup,
+					'is_resolved' => $is_resolved // Passa status
 				];
 			}
 		}
@@ -204,6 +226,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$host_problems_counts = $problems_by_host[$hostid]['counts'] ?? [];
 			$host_events = $problems_by_host[$hostid]['events'] ?? [];
 			
+			// Calcula a cor do Pin (Baseado apenas em problemas ATIVOS)
 			$highest_severity = -1;
 			if (!empty($host_problems_counts)) {
 				for ($s = 5; $s >= 0; $s--) {
@@ -216,9 +239,31 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 			
-			if (empty($severity_filters[$highest_severity])) continue;
+			// Se o filtro é "Resolved", o Pin deve ser VERDE (-1)
+			if ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+				$highest_severity = -1; 
+			}
 			
-			$best_group_name = empty($host['hostgroups']) ? $host['name'] : $host['hostgroups'][0]['name'];
+			if (empty($severity_filters[$highest_severity])) {
+				// Se a severidade atual (mesmo OK) não está no filtro, mas estamos pedindo "Resolved", mostramos
+				// A menos que o usuário tenha desmarcado "Not Classified/OK" explicitamente
+				if ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_PROBLEM) {
+					continue;
+				}
+			}
+			
+			// --- LÓGICA DE NOME DO GRUPO CORRIGIDA ---
+			$best_group_name = '';
+			if (!empty($host['hostgroups'])) {
+				// Escolhe o nome mais longo (mais específico)
+				usort($host['hostgroups'], function($a, $b) {
+					return strlen($b['name']) - strlen($a['name']);
+				});
+				$best_group_name = $host['hostgroups'][0]['name'];
+			} else {
+				$best_group_name = $host['name'];
+			}
+			// ----------------------------------------
 			
 			$locations_to_map[] = [
 				'hostid' => $hostid, 'name' => $host['name'], 'group_name' => $best_group_name,
@@ -275,11 +320,17 @@ class WidgetView extends CControllerDashboardWidgetView {
 		if (empty($triggers)) return [];
 
 		$options = [
-			'output' => ['eventid', 'objectid', 'clock', 'name', 'severity', 'r_eventid', 'acknowledged', 'suppressed'],
+			'output' => ['eventid', 'objectid', 'clock', 'name', 'severity', 'r_eventid', 'r_clock', 'acknowledged', 'suppressed'],
 			'source' => EVENT_SOURCE_TRIGGERS, 'object' => EVENT_OBJECT_TRIGGER,
 			'sortfield' => 'eventid', 'sortorder' => ZBX_SORT_DOWN,
 			'severities' => $severities_to_fetch, 'objectids' => array_keys($triggers)
 		];
+		
+		// Ajuste de Recent/History
+		if ($problem_filters['problem_status'] != WidgetForm::PROBLEM_STATUS_PROBLEM) {
+			$options['recent'] = true;
+		}
+
 		if ($problem_filters['show_acknowledged'] == 0) $options['acknowledged'] = false;
 
 		if ($problem_filters['show_suppressed_only'] == 1) {
@@ -309,17 +360,32 @@ class WidgetView extends CControllerDashboardWidgetView {
 			if ($problem_filters['show_suppressed_only'] == 1 && $p_sup == 0) continue;
 			if ($problem_filters['show_suppressed'] == 0 && $p_sup == 1) continue;
 			
+			$r_eventid = (int)($problem['r_eventid'] ?? 0);
+			$r_clock = (int)($problem['r_clock'] ?? 0);
+			$is_resolved = ($r_eventid != 0 || $r_clock != 0);
+
+			if ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_RESOLVED) {
+				if (!$is_resolved) continue;
+			} elseif ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_PROBLEM) {
+				if ($is_resolved) continue;
+			}
+
 			$hostid = $trigger_to_host_map[$problem['objectid']] ?? null;
 			if ($hostid === null || !isset($hosts_on_map[$hostid])) continue;
 			
+			// Ajuste de idade (Se resolvido, duração fixa; se ativo, duração atual)
+			$time_diff = $is_resolved ? ($r_clock - (int)$problem['clock']) : (time() - (int)$problem['clock']);
+
 			$detailed_problems[] = [
 				'eventid' => $problem['eventid'],
 				'hostname' => $hosts_on_map[$hostid],
 				'severity' => (int)$problem['severity'],
 				'problem' => $problem['name'],
 				'acknowledged' => (int)$problem['acknowledged'],
-				'suppressed' => $p_sup, // <-- ADICIONADO PARA O FRONTEND
-				'age' => $this->formatAge(time() - (int)$problem['clock'])
+				'suppressed' => $p_sup,
+				'is_resolved' => $is_resolved, // Passa status
+				'status_text' => $is_resolved ? _('RESOLVED') : _('PROBLEM'),
+				'age' => $this->formatAge($time_diff)
 			];
 		}
 		return $detailed_problems;
