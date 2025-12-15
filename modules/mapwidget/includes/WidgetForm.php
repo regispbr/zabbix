@@ -20,6 +20,11 @@ use Zabbix\Widgets\Fields\{
 
 class WidgetForm extends CWidgetForm {
 
+	// Constantes
+	public const PROBLEM_STATUS_ALL = 0;
+	public const PROBLEM_STATUS_PROBLEM = 1;
+	public const PROBLEM_STATUS_RESOLVED = 2;
+
 	public function addFields(): self {
 		// Map Config
 		$this->addField(
@@ -103,6 +108,16 @@ class WidgetForm extends CWidgetForm {
 				->setFlags(CWidgetField::FLAG_NOT_EMPTY)
 		);
 
+		// --- NOVO CAMPO: PROBLEM STATUS ---
+		$this->addField(
+			(new CWidgetFieldRadioButtonList('problem_status', _('Problem status'), [
+				self::PROBLEM_STATUS_ALL => _('All'),
+				self::PROBLEM_STATUS_PROBLEM => _('Problem'),
+				self::PROBLEM_STATUS_RESOLVED => _('Resolved')
+			]))->setDefault(self::PROBLEM_STATUS_PROBLEM)
+		);
+		// ----------------------------------
+
 		// Severities
 		$this->addField(
 			(new CWidgetFieldSeverities('severities', _('Severity')))
@@ -126,12 +141,10 @@ class WidgetForm extends CWidgetForm {
 				->setDefault(0)
 		);
 		
-		// --- NOVO CAMPO ---
 		$this->addField(
 			(new CWidgetFieldCheckBox('show_suppressed_only', _('Show ONLY suppressed')))
 				->setDefault(0)
 		);
-		// ------------------
 
 		$this->addField(
 			(new CWidgetFieldCheckBox('exclude_maintenance', _('Exclude hosts in maintenance')))
