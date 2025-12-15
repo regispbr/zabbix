@@ -6,6 +6,7 @@
     - TYPE = Tipo de Equipamento Switch, Link, Serviço, Firewall, Roteador, Acess Point
     - HOST TYPE = SERVICE, INFRASTRUCTURE , EXTERN
     - PROVIDER = Fornecedor 
+    - LOCAL LOCATION = Localização Loca (CPD, RACK, ..)
     - LOCATION = Localização (PAIS/UF/CIDADE/BAIRRO/END)
     - PRIORITY = Prioridade (Critical, High, Medium, Low, Planned)
     - SERVICE SCHEDULE = Regime de Atendimento (8x5, 12x5, 8x7, 24x7)
