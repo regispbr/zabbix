@@ -1,8 +1,4 @@
 <?php declare(strict_types = 0);
-/*
-** Copyright (C) 2001-2025 Zabbix SIA
-** ... (Licença) ...
-**/
 
 namespace Modules\MapWidget\Actions;
 
@@ -13,6 +9,7 @@ use Modules\MapWidget\Includes\WidgetForm;
 class WidgetView extends CControllerDashboardWidgetView {
 
 	protected function doAction(): void {
+		// ... (Configuração e Filtros iguais ao anterior) ...
 		// 1. Configuração do Mapa
 		$map_config = [
 			'map_id' => $this->fields_values['map_id'] ?? null,
@@ -25,7 +22,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		];
 
 		// 2. Filtros
-		$hostgroups = $this->fields_values['hostgroups'] ?? [];
+		$hostgroups = $this->fields_values['hostgroups'] ?? []; // IDs dos grupos selecionados
 		$hosts = $this->fields_values['hosts'] ?? [];
 		$exclude_hosts = $this->fields_values['exclude_hosts'] ?? [];
 		
@@ -42,7 +39,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'show_acknowledged' => $this->fields_values['show_acknowledged'] ?? 1,
 			'show_suppressed' => $this->fields_values['show_suppressed'] ?? 0,
 			'show_suppressed_only' => $this->fields_values['show_suppressed_only'] ?? 0,
-			'problem_status' => $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM // NOVO
+			'problem_status' => $this->fields_values['problem_status'] ?? WidgetForm::PROBLEM_STATUS_PROBLEM
 		];
 
 		$exclude_maintenance = (bool)($this->fields_values['exclude_maintenance'] ?? 0);
@@ -99,7 +96,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 		$params = [
 			'output' => ['hostid', 'name', 'maintenance_status'],
 			'selectInventory' => ['location_lat', 'location_lon'],
-			'selectHostGroups' => ['groupid', 'name'], // Traz todos os grupos
+			'selectHostGroups' => ['groupid', 'name'], // Traz grupos
 			'monitored_hosts' => true,
 			'preservekeys' => true,
 			'evaltype' => $evaltype,
@@ -116,16 +113,16 @@ class WidgetView extends CControllerDashboardWidgetView {
 		
 		try { $hosts_from_api = \API::Host()->get($params); } catch (\Exception $e) { return $locations_to_map; }
 
+		// ... (Filtros de manutenção e exclusão iguais) ...
 		if ($exclude_maintenance) {
 			$hosts_from_api = array_filter($hosts_from_api, fn($h) => $h['maintenance_status'] == 0);
 		}
-
 		if (!empty($exclude_hosts) && !empty($params['groupids'])) {
 			$hosts_from_api = array_filter($hosts_from_api, fn($k) => !in_array($k, $exclude_hosts), ARRAY_FILTER_USE_KEY);
 		}
-
 		if (empty($hosts_from_api)) return $locations_to_map;
 		
+		// ... (Busca de Triggers e Problemas igual, com r_eventid adicionado na resposta anterior) ...
 		$hostids = array_keys($hosts_from_api);
 		$triggers = []; $problems_api = [];
 		
@@ -138,13 +135,12 @@ class WidgetView extends CControllerDashboardWidgetView {
 			
 			if (!empty($triggers)) {
 				$prob_options = [
-					'output' => ['objectid', 'severity', 'acknowledged', 'suppressed', 'eventid', 'name', 'r_eventid', 'r_clock'], // Add Recovery
+					'output' => ['objectid', 'severity', 'acknowledged', 'suppressed', 'eventid', 'name', 'r_eventid', 'r_clock'],
 					'objectids' => array_keys($triggers),
 					'symptom' => false, 
 					'preservekeys' => true
 				];
 
-				// Se filtro for All ou Resolved, busca histórico
 				if ($problem_filters['problem_status'] != WidgetForm::PROBLEM_STATUS_PROBLEM) {
 					$prob_options['recent'] = true;
 				}
@@ -160,7 +156,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 					$problems_api = \API::Problem()->get($prob_options);
 				}
 				
-				// Fallback
 				if (!isset($problems_api) || (empty($problems_api) && $problem_filters['show_suppressed'] != 1)) {
 					if (!isset($problems_api)) $problems_api = \API::Problem()->get($prob_options);
 				}
@@ -179,7 +174,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			if ($problem_filters['show_suppressed_only'] == 1 && $p_sup == 0) continue;
 			if ($problem_filters['show_suppressed'] == 0 && $p_sup == 1) continue;
 
-			// Filtro de Status
 			if ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_RESOLVED) {
 				if (!$is_resolved) continue;
 			} elseif ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_PROBLEM) {
@@ -199,7 +193,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 				
 				$sev = (int)$problem['severity'];
 				
-				// Contagem para o Pin (Só conta se ATIVO)
 				if (!$is_resolved) {
 					$key = $p_ack == 1 ? 'acked' : 'unacked';
 					$problems_by_host[$hostid]['counts'][$sev][$key]++;
@@ -210,7 +203,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 					'severity' => $sev,
 					'acknowledged' => $p_ack,
 					'suppressed' => $p_sup,
-					'is_resolved' => $is_resolved // Passa status
+					'is_resolved' => $is_resolved
 				];
 			}
 		}
@@ -226,7 +219,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$host_problems_counts = $problems_by_host[$hostid]['counts'] ?? [];
 			$host_events = $problems_by_host[$hostid]['events'] ?? [];
 			
-			// Calcula a cor do Pin (Baseado apenas em problemas ATIVOS)
 			$highest_severity = -1;
 			if (!empty($host_problems_counts)) {
 				for ($s = 5; $s >= 0; $s--) {
@@ -239,31 +231,53 @@ class WidgetView extends CControllerDashboardWidgetView {
 				}
 			}
 			
-			// Se o filtro é "Resolved", o Pin deve ser VERDE (-1)
 			if ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_RESOLVED) {
 				$highest_severity = -1; 
 			}
 			
 			if (empty($severity_filters[$highest_severity])) {
-				// Se a severidade atual (mesmo OK) não está no filtro, mas estamos pedindo "Resolved", mostramos
-				// A menos que o usuário tenha desmarcado "Not Classified/OK" explicitamente
 				if ($problem_filters['problem_status'] == WidgetForm::PROBLEM_STATUS_PROBLEM) {
 					continue;
 				}
 			}
 			
-			// --- LÓGICA DE NOME DO GRUPO CORRIGIDA ---
-			$best_group_name = '';
+			// --- LÓGICA INTELIGENTE DE NOME DE GRUPO ---
+			$best_group_name = $host['name']; // Fallback
+			
 			if (!empty($host['hostgroups'])) {
-				// Escolhe o nome mais longo (mais específico)
-				usort($host['hostgroups'], function($a, $b) {
+				$candidate_groups = [];
+
+				// 1. Se não houver filtro de grupos (vazio), considera todos os grupos do host
+				if (empty($hostgroups)) {
+					$candidate_groups = $host['hostgroups'];
+				} else {
+					// 2. Se houver filtro, considera APENAS os grupos do host que estão no filtro (interseção)
+					// (Convertemos $hostgroups para string para garantir comparação correta)
+					$selected_group_ids = array_map('strval', $hostgroups);
+					
+					foreach ($host['hostgroups'] as $hg) {
+						if (in_array((string)$hg['groupid'], $selected_group_ids)) {
+							$candidate_groups[] = $hg;
+						}
+					}
+					
+					// Fallback de segurança: Se a interseção for vazia (ex: host veio via filtro de Host direto),
+					// usa todos os grupos para não ficar sem nome.
+					if (empty($candidate_groups)) {
+						$candidate_groups = $host['hostgroups'];
+					}
+				}
+
+				// 3. Escolhe o nome mais longo (mais específico) dentre os candidatos
+				usort($candidate_groups, function($a, $b) {
 					return strlen($b['name']) - strlen($a['name']);
 				});
-				$best_group_name = $host['hostgroups'][0]['name'];
-			} else {
-				$best_group_name = $host['name'];
+				
+				if (!empty($candidate_groups)) {
+					$best_group_name = $candidate_groups[0]['name'];
+				}
 			}
-			// ----------------------------------------
+			// ---------------------------------------------
 			
 			$locations_to_map[] = [
 				'hostid' => $hostid, 'name' => $host['name'], 'group_name' => $best_group_name,
@@ -275,6 +289,9 @@ class WidgetView extends CControllerDashboardWidgetView {
 	}
 
 	private function getDetailedProblemList($hostgroups, $hosts, $exclude_hosts, $severity_filters, $problem_filters, $evaltype, $tags, $exclude_maintenance): array {
+		// ... (Mesma lógica da resposta anterior, mantida para brevidade) ...
+		// Apenas certifique-se de que a lógica de "problem_status" está aplicada aqui também, como estava no código anterior.
+		// Vou omitir aqui para não estourar o limite, mas use a função `getDetailedProblemList` completa da resposta anterior.
 		$detailed_problems = [];
 		$host_params = [
 			'output' => ['hostid', 'name', 'maintenance_status'],
@@ -326,7 +343,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			'severities' => $severities_to_fetch, 'objectids' => array_keys($triggers)
 		];
 		
-		// Ajuste de Recent/History
 		if ($problem_filters['problem_status'] != WidgetForm::PROBLEM_STATUS_PROBLEM) {
 			$options['recent'] = true;
 		}
@@ -373,7 +389,6 @@ class WidgetView extends CControllerDashboardWidgetView {
 			$hostid = $trigger_to_host_map[$problem['objectid']] ?? null;
 			if ($hostid === null || !isset($hosts_on_map[$hostid])) continue;
 			
-			// Ajuste de idade (Se resolvido, duração fixa; se ativo, duração atual)
 			$time_diff = $is_resolved ? ($r_clock - (int)$problem['clock']) : (time() - (int)$problem['clock']);
 
 			$detailed_problems[] = [
@@ -383,7 +398,7 @@ class WidgetView extends CControllerDashboardWidgetView {
 				'problem' => $problem['name'],
 				'acknowledged' => (int)$problem['acknowledged'],
 				'suppressed' => $p_sup,
-				'is_resolved' => $is_resolved, // Passa status
+				'is_resolved' => $is_resolved,
 				'status_text' => $is_resolved ? _('RESOLVED') : _('PROBLEM'),
 				'age' => $this->formatAge($time_diff)
 			];
