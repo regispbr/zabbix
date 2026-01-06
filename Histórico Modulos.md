@@ -47,18 +47,6 @@ Validar correlação dos alarmes, exibir e contar apenas aqueles que estão real
 
 
 
-#Tarefas atuais Enzo:
-(✓) ⏳
-- Incluir filtro por tag e value no alarm widget. (1°) (✓)
-  
-- Averiguar todos os widgets para conferir se estão funcionando com essa funcionalidade, e consertar aqueles que não estão.  (2°) (✓)
+#Tarefas atuais Enzo: (✓) ⏳
 
-- Incluir Problem Status nos demais widgets -> Alarmwidget para usar de base.  (3°) (✓)
-
-- Alterar demais widgets para mesma organização do filtro de severidade, ficando igual ao do alarmwdiget no forms.  (4°) (✓)
-
-- Incluir filtro de exibir somente os problemas suprimidos. (5°) (✓)
-
-- Alterar pop-up do Hostgroupalarms para ficar igual ao do mapwidget. (6°) (✓)
-
-- Ajustar completamente o widget table, usando o exemplo do github (7°)  ⏳
+- Ajustar completamente o widget table, usando o exemplo do github ⏳
