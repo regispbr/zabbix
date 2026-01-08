@@ -68,7 +68,6 @@ window.tablemodulerme_column_edit_form = new class {
 				allow_empty: true,
 				dataCallback: (row_data) => {
 					if (!('color' in row_data)) {
-						// CORREÇÃO: Removido ZBX_STYLE_COLOR_PICKER e usado seletor genérico de inputs de cor
 						const color_inputs = this.#form.querySelectorAll('input[name$="[color]"]');
 						const used_colors = [];
 
@@ -82,8 +81,12 @@ window.tablemodulerme_column_edit_form = new class {
 					}
 				}
 			})
-			.on('afteradd.dynamicRows', () => this.#updateForm())
-			.on('afterremove.dynamicRows', () => this.#updateForm())
+			.on('afteradd.dynamicRows', (e, rows) => {
+				// CORREÇÃO: Inicializar o colorpicker na nova linha adicionada
+				jQuery('.input-color-picker input', rows[0]).colorpicker();
+				this.#updateForm();
+			})
+			.on('afterremove.dynamicRows', () => this.#updateForm());
 
 		// Initialize highlights table.
 		$(this.#highlights_table)
@@ -93,7 +96,6 @@ window.tablemodulerme_column_edit_form = new class {
 				allow_empty: true,
 				dataCallback: (row_data) => {
 					if (!('color' in row_data)) {
-						// CORREÇÃO: Mesma correção para highlights
 						const color_inputs = this.#form.querySelectorAll('input[name$="[color]"]');
 						const used_colors = [];
 
@@ -107,7 +109,11 @@ window.tablemodulerme_column_edit_form = new class {
 					}
 				}
 			})
-			.on('afteradd.dynamicRows', () => this.#updateForm())
+			.on('afteradd.dynamicRows', (e, rows) => {
+				// CORREÇÃO: Inicializar o colorpicker na nova linha de highlight
+				jQuery('.input-color-picker input', rows[0]).colorpicker();
+				this.#updateForm();
+			})
 			.on('afterremove.dynamicRows', () => this.#updateForm());
 
 		// Initialize Advanced configuration collapsible.
@@ -120,6 +126,9 @@ window.tablemodulerme_column_edit_form = new class {
 		this.#form.querySelectorAll('[name="min"], [name="max"]').forEach(element => {
 			element.addEventListener('change', (e) => e.target.value = e.target.value.trim(), {capture: true});
 		});
+
+		// CORREÇÃO CRÍTICA: Inicializar colorpickers já existentes no carregamento
+		jQuery('.input-color-picker input', this.#form).colorpicker();
 
 		// Initialize form elements accessibility.
 		this.#updateForm();
@@ -371,9 +380,8 @@ window.tablemodulerme_column_edit_form = new class {
 	submit() {
 		if (this.all_hosts_aggregated && this.all_hosts_aggregated.nextElementSibling) {
 			const checkbox = this.all_hosts_aggregated.nextElementSibling.querySelector('[id="aggregate_all_hosts"]');
-			const colAggMethod = document.getElementById('column_agg_method'); // Pode ser select normal ou z-select
+			const colAggMethod = document.getElementById('column_agg_method');
 			
-			// Ajuste para pegar valor de input hidden se for select customizado
 			const colAggVal = colAggMethod ? colAggMethod.value : '0';
 
 			if (checkbox && checkbox.checked && colAggVal === '0') {
