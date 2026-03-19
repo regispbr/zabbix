@@ -11,10 +11,12 @@
     - PRIORITY = Prioridade (Critical, High, Medium, Low, Planned)
     - SERVICE SCHEDULE = Regime de Atendimento (8x5, 12x5, 8x7, 24x7)
     - BUSINESS HOUR = Horário de Atendimento (09:00-18:00)
-    - CUSTUMER = NOME DO CLIENTE
+    - CUSTOMER = NOME DO CLIENTE
     - SERVICE NAME = NOME DO SERVIÇO QUE RODA, SE HOUVER
     - ABREVIATION = SIGLA
     - NOTE = NOTAS OU OBSERVAÇÃO
+    - ID BITRIX = ID 
+    - ID SAP = ID
 
  ### Tags de Triggers
     - INCIDENT = ERROR, PERFORMANCE, AVAILABILITY
